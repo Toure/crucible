@@ -1,0 +1,12 @@
+[libvirtd_conf]
+filename: /etc/libvirt/libvirtd.conf
+listen_tls: 0
+listen_tcp: 1
+auth_unix_ro: none
+auth_unix_rw: none
+auth_tcp: none
+auth_tls: none
+
+[libvirtd_sysconfig]
+filename: /etc/sysconfig/libvirtd
+LIBVIRTD_ARGS: listen

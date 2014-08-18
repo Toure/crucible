@@ -1,0 +1,11 @@
+[nfs_export]
+exports: /var/lib/nova
+attribute: rw,fsid=0,insecure,no_subtree_check,async,no_root_squash
+network: *
+
+[nfs_idmapd]
+filename: /etc/idmapd.conf
+Domain: lab.eng.rdu2.redhat.com
+
+[iscsi_tgd]
+#Feature to come later.

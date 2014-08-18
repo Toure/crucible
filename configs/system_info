@@ -1,0 +1,47 @@
+[packstack]
+path: /tmp/rhos_live_migration.txt
+
+[mysql]
+CONFIG_MYSQL_INSTALL: y
+
+[glance]
+CONFIG_GLANCE_INSTALL: y
+
+[cinder]
+CONFIG_CINDER_INSTALL: y
+
+[nova]
+CONFIG_NOVA_INSTALL: y
+#CONFIG_NOVA_COMPUTE_HOSTS key will take a list ei: 192.168.0.10, 172.16.1.10
+CONFIG_NOVA_COMPUTE_HOSTS:
+
+[neutron]
+CONFIG_NEUTRON_INSTALL: y
+
+[horizon]
+CONFIG_HORIZON_INSTALL: y
+
+[swift]
+CONFIG_SWIFT_INSTALL: y
+
+[ceilometer]
+CONFIG_CEILOMETER_INSTALL: y
+
+[heat]
+CONFIG_HEAT_INSTALL: n
+
+[nagios]
+CONFIG_NAGIOS_INSTALL: y
+
+[demo]
+CONFIG_PROVISION_DEMO: n
+
+[selinux]
+setsebool: nfs_export_all_rw
+
+[fstab]
+nfs_server: x.x.x.x:/
+nfs_client_mount: /openstack
+fstype: nfs4
+attribute: defaults,context="system_u:object_r:nova_var_lib_t:s0"
+fsck: 0 0

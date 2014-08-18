@@ -1,0 +1,6 @@
+[nfs rules]
+tcp_ports: 111,662,875,892,2049,32803
+udp_ports: 111,662,875,892,2049,32769
+
+[libvirtd rules]
+tcp_ports: 16509
