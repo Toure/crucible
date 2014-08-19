@@ -18,14 +18,28 @@ class Base(OSVer):
     Base class for system configuration
     """
     def __init__(self):
-        self.config = ConfigParser.ConfigParser()
-        self.firewall_config = self.config.read('../configs/firewall')
-        self.libvirtd_config = self.config.read('../configs/libvirtd')
-        self.nova_config = self.config.read('../configs/nova')
-        self.share_storage_config = self.config.read('../configs/share_storage')
-        self.system_info_config = self.config.read('../configs/system_info')
+        self.firewall_config = None
+        self.libvirtd_config = None
+        self.nova_config = None
+        self.share_storage_config = None
+        self.system_info_config = None
 
-    def config_mapper(self, config_reader, section):
+    def make_config_obj(self, cfgname, path):
+        """
+        helper function to allow for dynamic instances of configparser.
+        :param cfgname: ini file config object.
+        :param path: ini file path for configparser to read.
+        :return: configparser object for self.cfgname
+        """
+        try:
+            setattr(self, cfgname, ConfigParser.ConfigParser())
+            obj = getattr(self, cfgname)
+            obj.read(path)
+            return obj
+        except AttributeError as AE:
+            print AE.message
+
+    def config_gettr(self, config_reader, section):
         """
         helper function to decipher the config file values.
         :param config_reader: ConfigParser read object
@@ -48,12 +62,23 @@ class Base(OSVer):
         """
         #rhel_ver = {6: "upstart", 7: "systemd"}
         #rhel_env = rhel_ver[OSVer.system_version()]
-        answerfile_path = self.config_mapper(self.system_info_config, 'packstack')['path']
-        run_setup.generateAnswerFile(answerfile_path)
+        self.system_info_config = self.make_config('sys_info', '../configs/system_info')
+        answerfile = self.config_gettr(self.system_info_config, 'packstack')['filename']
+        run_setup.generateAnswerFile(answerfile)
 
-        if os.path.isfile(answerfile_path):
-            answerfile = self.config.read(answerfile_path)
-            answerfile.
+        if os.path.exists(answerfile):
+            nova_compute_hosts = self.config_gettr(self.system_info_config, 'nova')['NOVA_COMPUTE_HOSTS']
+            answer_file = self.make_config_obj('packstack_ans', answerfile)
+            try:
+                answer_file.set('general', 'CONFIG_COMPUTE_HOSTS', nova_compute_hosts)
+            except IOError as e:
+                print e.message
+            run_setup._main(configFile=answerfile)
+
+        else:
+            print("Couldn't find packstack answer file")
+            exit()
+
 
     def network_setup(self):
         pass
