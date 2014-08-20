@@ -121,9 +121,10 @@ class Base(OSVer):
         else:
             print("Couldn't find packstack answer file")
             exit()
+        return 0
 
     def firewall_setup(self):
-        self.firewall_config = self.make_config_obj('firewall_rules', '../configs/firewall')
+        self.firewall_config = self.make_config_obj('firewall', '../configs/firewall')
         nfs_tcp = self.config_gettr(self.firewall_config, 'nfs rules')['tcp_ports']
         nfs_udp = self.config_gettr(self.firewall_config, 'nfs rules')['udp_ports']
         libvirtd_tcp = self.config_gettr(self.firewall_config, 'libvirtd rules')['tcp_ports']
@@ -132,9 +133,10 @@ class Base(OSVer):
             for ports in [nfs_tcp, nfs_udp, libvirtd_tcp]:
                 cmd = u"iptables -A INPUT -p tcp --dport {0:s} -j ACCEPT".format(ports)
                 self.rmt_exec(host, cmd)
+        return 0
 
     def libvirtd_setup(self):
-        self.libvirtd_config = self.make_config_obj('libvirt_conf', '../configs/libvirtd')
+        self.libvirtd_config = self.make_config_obj('libvirtd', '../configs/libvirtd')
         _libvirtd_conf = dict(self.libvirtd_config.items('libvirtd_conf'))
         _libvirtd_sysconf = dict(self.libvirtd_config.items('libvirtd_sysconfig'))
 
@@ -166,7 +168,16 @@ class Base(OSVer):
                 file_path = ('/'.join(file[1:3]))
                 self.rmt_copy(host, send=True, fname=file[3], remote_path=file_path)
 
-
-
     def nova_setup(self):
-        pass
+        self.nova_config = self.make_config_obj('nova', '../configs/nova')
+        _nova_conf = dict(self.nova_config.items('nova_conf'))
+        _nova_api_service = dict(self.nova_config.item('nova_api_service'))
+        _nova_cert_service = dict(self.nova_config.item('nova_cert_service'))
+        _nova_compute_service = dict(self.nova_config.item('nova_compute_service'))
+        config_list = [_nova_conf, _nova_api_service, _nova_cert_service, _nova_compute_service]
+
+        for conf in config_list:
+            self.rmt_copy(self.nova_hosts[0], get=True, fname=conf['filename'])
+        for name, value in _nova_conf:
+            self.adj_val(name, value, oldfile='nova.conf', newfile='nova_new.conf')
+
