@@ -6,11 +6,13 @@ import os
 import sys
 import readline
 import ConfigParser
+from paramiko import SSHClient
+from scp import SCPClient
 
 try:
     from packstack.installer import run_setup
-except ImportError:
-    print('packstack isn\'t installed')
+except ImportError as IE:
+    print IE.message
 
 
 class Base(OSVer):
@@ -56,6 +58,36 @@ class Base(OSVer):
                 bucket[value] = None
         return value
 
+    def rmt_copy(self, hostname, get=False, send=False, fname=None):
+        """Remote copy function retrieves files from specified host.
+        :param hostname: host name or ip address
+        :param get: flag to receive files
+        :param send: flag to send files
+        :param fname: file name which to transport
+        """
+        ssh = SSHClient()
+        ssh.load_system_host_keys()
+        ssh.connect(hostname)
+        scp = SCPClient(ssh.get_transport())
+        if get:
+            scp.get(fname)
+        elif send:
+            scp.put(fname)
+
+    def rmt_exec(self, hostname, cmd):
+        ssh = SSHClient()
+        ssh.connect(hostname)
+        ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command(cmd)
+        return ssh_stdin, ssh_stdout, ssh_stderr
+
+    def adj_val(self, token, value, filename=None):
+        """Change the value of the token in a given config file.
+        :param token: key within the config file
+        :param value: value for token
+        :param filename: specified config file
+        """
+        pass
+
     def system_setup(self):
         """
         System setup will determine RHEL version and configure the correct services per release info.
@@ -79,9 +111,21 @@ class Base(OSVer):
             print("Couldn't find packstack answer file")
             exit()
 
+    def firewall_setup(self, hostname):
+        """
 
-    def network_setup(self):
-        pass
+        :param hostname:
+        """
+        self.firewall_config = self.make_config_obj('firewall_rules', '../configs/firewall')
+        nfs_tcp = self.config_gettr(self.firewall_config, 'nfs rules')[tcp_ports]
+        nfs_udp = self.config_gettr(self.firewall_config, 'nfs rules')[udp_ports]
+        libvirtd_tcp = self.config_gettr(self.firewall_config, 'libvirtd rules')[tcp_ports]
+
+        cmd = 'iptables -A INPUT -p tcp --dport %s -j ACCEPT' % ports
+
+        for host in hostname:
+            for ports in [nfs_tcp, nfs_udp, libvirtd_tcp]:
+                self.rmt_exec(host, cmd)
 
     def libvirtd_setup(self):
         pass
