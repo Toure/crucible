@@ -1,13 +1,9 @@
-from task.os_info import OSVer
+from task.sys_utils import Utils
 
 __author__ = 'toure'
 
 import os
-import sys
-import readline
 import ConfigParser
-from paramiko import SSHClient
-from scp import SCPClient
 
 try:
     from packstack.installer import run_setup
@@ -15,7 +11,7 @@ except ImportError as IE:
     print IE.message
 
 
-class Base(OSVer):
+class Base(object):
     """
     Base class for system configuration
     """
@@ -59,53 +55,16 @@ class Base(OSVer):
                 bucket[value] = None
         return value
 
-    def rmt_copy(self, hostname, get=False, send=False, fname=None, remote_path=None):
-        """Remote copy function retrieves files from specified host.
-        :param remote_path: where to place the file on the other end.
-        :param hostname: host name or ip address
-        :param get: flag to receive files
-        :param send: flag to send files
-        :param fname: file name which to transport
-        """
-        ssh = SSHClient()
-        ssh.load_system_host_keys()
-        ssh.connect(hostname)
-        scp = SCPClient(ssh.get_transport())
-        if get:
-            os.chdir('/tmp')
-            scp.get(fname)
-        elif send:
-            scp.put(fname, remote_path=remote_path)
 
-    def rmt_exec(self, hostname, cmd):
-        ssh = SSHClient()
-        ssh.connect(hostname)
-        ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command(cmd)
-        return ssh_stdin, ssh_stdout, ssh_stderr
-
-    def adj_val(self, token, value, oldfile=None, newfile=None):
-        """Change the value of the token in a given config file.
-        :param token: key within the config file
-        :param value: value for token
-        :param filename: specified config file
-        """
-        r = open(oldfile, 'r')
-        w = open(newfile, 'w')
-        lines = r.readlines()
-        for line in lines:
-            line.split('=')
-            if token in line[0]:
-                if line[0].startswith('#'):
-                    line[0] = line[0].replace('#', '')
-                line[1] = value
-            w.write('='.join(line))
+class Setup(Base, Utils):
+    def __init__(self):
+        super(Setup, self).__init__()
+        self.rhel_ver = {6: "upstart", 7: "systemd"}
 
     def system_setup(self):
         """
         System setup will determine RHEL version and configure the correct services per release info.
         """
-        #rhel_ver = {6: "upstart", 7: "systemd"}
-        #rhel_env = rhel_ver[OSVer.system_version()]
         self.system_info_config = self.make_config_obj('sys_info', '../configs/system_info')
         answerfile = self.config_gettr(self.system_info_config, 'packstack')['filename']
         run_setup.generateAnswerFile(answerfile)
@@ -121,6 +80,7 @@ class Base(OSVer):
         else:
             print("Couldn't find packstack answer file")
             exit()
+
         return 0
 
     def firewall_setup(self):
@@ -168,16 +128,26 @@ class Base(OSVer):
                 file_path = ('/'.join(file[1:3]))
                 self.rmt_copy(host, send=True, fname=file[3], remote_path=file_path)
 
+        return 0
+
     def nova_setup(self):
         self.nova_config = self.make_config_obj('nova', '../configs/nova')
         _nova_conf = dict(self.nova_config.items('nova_conf'))
-        _nova_api_service = dict(self.nova_config.item('nova_api_service'))
-        _nova_cert_service = dict(self.nova_config.item('nova_cert_service'))
-        _nova_compute_service = dict(self.nova_config.item('nova_compute_service'))
-        config_list = [_nova_conf, _nova_api_service, _nova_cert_service, _nova_compute_service]
+        if self.rhel_ver[self.system_version()] >= 7:
+            _nova_api_service = dict(self.nova_config.item('nova_api_service'))
+            _nova_cert_service = dict(self.nova_config.item('nova_cert_service'))
+            _nova_compute_service = dict(self.nova_config.item('nova_compute_service'))
+            config_list = [_nova_conf, _nova_api_service, _nova_cert_service, _nova_compute_service]
+        else:
+            config_list = [_nova_conf]
 
         for conf in config_list:
             self.rmt_copy(self.nova_hosts[0], get=True, fname=conf['filename'])
         for name, value in _nova_conf:
             self.adj_val(name, value, oldfile='nova.conf', newfile='nova_new.conf')
 
+    def nfs_server_setup(self):
+        pass
+
+    def nfs_client_setup(self):
+        pass
