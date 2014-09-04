@@ -50,14 +50,18 @@ class Utils(object):
         return ssh_stdin, ssh_stdout, ssh_stderr
 
     @staticmethod
-    def adj_val(token, value, oldfile=None, newfile=None):
+    def adj_val(token, value, o_file, n_file):
         """Change the value of the token in a given config file.
         :param token: key within the config file
         :param value: value for token
-        :param filename: specified config file
+        :param o_file: current configuration file which to read data.
+        :param n_file: new configuration file which to write out data.
         """
-        r = open(oldfile, 'r')
-        w = open(newfile, 'w')
+        if o_file == None:
+            w = open(n_file, 'w')
+
+        r = open(o_file, 'r')
+        w = open(n_file, 'w')
         lines = r.readlines()
         for line in lines:
             line.split('=')

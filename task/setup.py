@@ -84,6 +84,11 @@ class Setup(Base, Utils):
         return 0
 
     def firewall_setup(self):
+        """
+
+
+        :return:
+        """
         self.firewall_config = self.make_config_obj('firewall', '../configs/firewall')
         nfs_tcp = self.config_gettr(self.firewall_config, 'nfs rules')['tcp_ports']
         nfs_udp = self.config_gettr(self.firewall_config, 'nfs rules')['udp_ports']
@@ -96,6 +101,11 @@ class Setup(Base, Utils):
         return 0
 
     def libvirtd_setup(self):
+        """
+
+
+        :return:
+        """
         self.libvirtd_config = self.make_config_obj('libvirtd', '../configs/libvirtd')
         _libvirtd_conf = dict(self.libvirtd_config.items('libvirtd_conf'))
         _libvirtd_sysconf = dict(self.libvirtd_config.items('libvirtd_sysconfig'))
@@ -104,8 +114,8 @@ class Setup(Base, Utils):
             self.rmt_copy(self.nova_hosts[0], get=True, fname=_dict_obj['filename'])
 
         for name, value in _libvirtd_conf:
-            self.adj_val(name, value, oldfile='libvirtd.conf', newfile='libvirtd.conf.new')
-        self.adj_val('LIBVIRTD_ARGS', 'listen', oldfile='libvirtd', newfile='libvirtd.new')
+            self.adj_val(name, value, o_file='libvirtd.conf', n_file='libvirtd.conf.new')
+        self.adj_val('LIBVIRTD_ARGS', 'listen', o_file='libvirtd', n_file='libvirtd.new')
 
         try:
             os.rename('libvirtd.conf', 'libvirtd.conf.org')
@@ -131,23 +141,53 @@ class Setup(Base, Utils):
         return 0
 
     def nova_setup(self):
+        """
+
+
+        """
         self.nova_config = self.make_config_obj('nova', '../configs/nova')
         _nova_conf = dict(self.nova_config.items('nova_conf'))
         if self.rhel_ver[self.system_version()] >= 7:
             _nova_api_service = dict(self.nova_config.item('nova_api_service'))
             _nova_cert_service = dict(self.nova_config.item('nova_cert_service'))
             _nova_compute_service = dict(self.nova_config.item('nova_compute_service'))
-            config_list = [_nova_conf, _nova_api_service, _nova_cert_service, _nova_compute_service]
+            nova_config_list = [_nova_conf, _nova_api_service, _nova_cert_service, _nova_compute_service]
         else:
-            config_list = [_nova_conf]
+            nova_config_list = [_nova_conf]
+#TODO complete this section for RHEL6
 
-        for conf in config_list:
+        for conf in nova_config_list:
             self.rmt_copy(self.nova_hosts[0], get=True, fname=conf['filename'])
         for name, value in _nova_conf:
-            self.adj_val(name, value, oldfile='nova.conf', newfile='nova_new.conf')
+            self.adj_val(name, value, o_file='nova.conf', n_file='nova_new.conf')
 
     def nfs_server_setup(self):
+        """
+
+
+        """
+        self.share_storage_config = self.make_config_obj('nfs_server', '../configs/share_storage')
+        _nfs_export = self.config_gettr(self.share_storage_config, 'nfs_export')['export']
+        _nfs_export_attribute = self.config_gettr(self.share_storage_config, 'nfs_export')['attribute']
+        _nfs_export_net = self.config_gettr(self.share_storage_config, 'nfs_export')['network']
+        _nfs_server_ip = self.config_gettr(self.share_storage_config, 'nfs_export')['nfs_server']
+        _nfs_export_filename = self.config_gettr(self.share_storage_config, 'nfs_export')['filename']
+
+        if self.rhel_ver >= 7:
+            _nfs_idmapd_filename = self.config_gettr(self.share_storage_config, 'nfs_idmapd')['filename']
+            _nfs_idmapd_domain = self.config_gettr(self.share_storage_config, 'nfs_idmapd')['domain']
+
+        for file in [_nfs_export_filename, _nfs_idmapd_filename]:
+            self.rmt_copy(_nfs_server_ip, get=True, fname=file)
+
+
+
+
         pass
 
     def nfs_client_setup(self):
+        """
+
+
+        """
         pass
