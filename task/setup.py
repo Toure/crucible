@@ -59,7 +59,7 @@ class Base(object):
 class Setup(Base, Utils):
     def __init__(self):
         super(Setup, self).__init__()
-        self.rhel_ver = {6: "upstart", 7: "systemd"}
+        self.rhel_ver = self.system_version()
 
     def system_setup(self):
         """
@@ -96,8 +96,12 @@ class Setup(Base, Utils):
 
         for host in self.nova_hosts:
             for ports in [nfs_tcp, nfs_udp, libvirtd_tcp]:
-                cmd = u"iptables -A INPUT -p tcp --dport {0:s} -j ACCEPT".format(ports)
-                self.rmt_exec(host, cmd)
+                cmd = "iptables -A INPUT -p tcp --dport {0:s} -j ACCEPT".format(ports)
+                stdout = self.rmt_exec(host, cmd)
+                if len(stdout[1]) == 0:
+                    continue
+                else:
+                    raise EnvironmentError('The remote command failed {}'.format(stdout[1]))
         return 0
 
     def libvirtd_setup(self):
@@ -117,49 +121,35 @@ class Setup(Base, Utils):
             self.adj_val(name, value, o_file='libvirtd.conf', n_file='libvirtd.conf.new')
         self.adj_val('LIBVIRTD_ARGS', 'listen', o_file='libvirtd', n_file='libvirtd.new')
 
-        try:
-            os.rename('libvirtd.conf', 'libvirtd.conf.org')
-            os.rename('libvirtd', 'libvirtd.org')
-        except IOError as ie:
-            print ie.message
-            exit()
-
-        try:
-            os.rename('libvirtd.conf.new', 'libvirtd.conf')
-            os.rename('libvirtd.new', 'libvirtd')
-        except IOError as ie:
-            print ie.message
-            exit()
+        self.renamer('/tmp')
 
         for host in self.nova_hosts:
             for _obj in [_libvirtd_conf, _libvirtd_sysconf]:
                 file = _obj['filename']
                 file = file.split('/')
-                file_path = ('/'.join(file[1:3]))
+                file_path = ('/'.join(file[1:3])) + '/'   # todo figure out a better format.
                 self.rmt_copy(host, send=True, fname=file[3], remote_path=file_path)
 
         return 0
 
     def nova_setup(self):
-        """
+        """Nova setup will configure all necessary files for nova to enable live migration."""
 
-
-        """
         self.nova_config = self.make_config_obj('nova', '../configs/nova')
         _nova_conf = dict(self.nova_config.items('nova_conf'))
-        if self.rhel_ver[self.system_version()] >= 7:
+
+        if self.rhel_ver >= 7:
             _nova_api_service = dict(self.nova_config.item('nova_api_service'))
             _nova_cert_service = dict(self.nova_config.item('nova_cert_service'))
             _nova_compute_service = dict(self.nova_config.item('nova_compute_service'))
             nova_config_list = [_nova_conf, _nova_api_service, _nova_cert_service, _nova_compute_service]
         else:
             nova_config_list = [_nova_conf]
-#TODO complete this section for RHEL6
 
         for conf in nova_config_list:
             self.rmt_copy(self.nova_hosts[0], get=True, fname=conf['filename'])
         for name, value in _nova_conf:
-            self.adj_val(name, value, o_file='nova.conf', n_file='nova_new.conf')
+            self.adj_val(name, value, o_file='nova.conf', n_file='nova.conf.new')
 
     def nfs_server_setup(self):
         """
