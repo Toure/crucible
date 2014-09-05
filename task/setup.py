@@ -62,8 +62,7 @@ class Setup(Base, Utils):
         self.rhel_ver = self.system_version()
 
     def system_setup(self):
-        """
-        System setup will determine RHEL version and configure the correct services per release info.
+        """System setup will determine RHEL version and configure the correct services per release info.
         """
         self.system_info_config = self.make_config_obj('sys_info', '../configs/system_info')
         answerfile = self.config_gettr(self.system_info_config, 'packstack')['filename']
@@ -84,10 +83,10 @@ class Setup(Base, Utils):
         return 0
 
     def firewall_setup(self):
-        """
+        """Firewall setup will open necessary ports on all compute nodes to allow libvirtd, nfs_server to
+        communicate with their clients.
 
-
-        :return:
+        :return: upon success zero is returned if not an exception is raised.
         """
         self.firewall_config = self.make_config_obj('firewall', '../configs/firewall')
         nfs_tcp = self.config_gettr(self.firewall_config, 'nfs rules')['tcp_ports']
@@ -105,30 +104,32 @@ class Setup(Base, Utils):
         return 0
 
     def libvirtd_setup(self):
-        """
+        """ libvirtd setup will configure libvirtd to listen on the external network interface.
 
-
-        :return:
+        :return: upon success zero is returned if not an exception is raised.
         """
         self.libvirtd_config = self.make_config_obj('libvirtd', '../configs/libvirtd')
+        if os.mkdir('/tmp/libvirtd_conf'):
+            os.chdir('/tmp/libvirtd_conf')
+
         _libvirtd_conf = dict(self.libvirtd_config.items('libvirtd_conf'))
         _libvirtd_sysconf = dict(self.libvirtd_config.items('libvirtd_sysconfig'))
 
         for _dict_obj in [_libvirtd_conf, _libvirtd_sysconf]:
-            self.rmt_copy(self.nova_hosts[0], get=True, fname=_dict_obj['filename'])
+            self.rmt_copy(self.nova_hosts[0], get=True, remote_path=_dict_obj['filename'])
 
         for name, value in _libvirtd_conf:
-            self.adj_val(name, value, o_file='libvirtd.conf', n_file='libvirtd.conf.new')
-        self.adj_val('LIBVIRTD_ARGS', 'listen', o_file='libvirtd', n_file='libvirtd.new')
+            self.adj_val(name, value, 'libvirtd.conf', 'libvirtd.conf.new')
+        self.adj_val('LIBVIRTD_ARGS', 'listen', 'libvirtd', 'libvirtd.new')
 
         self.renamer('/tmp')
 
         for host in self.nova_hosts:
             for _obj in [_libvirtd_conf, _libvirtd_sysconf]:
-                file = _obj['filename']
-                file = file.split('/')
-                file_path = ('/'.join(file[1:3])) + '/'   # todo figure out a better format.
-                self.rmt_copy(host, send=True, fname=file[3], remote_path=file_path)
+                file_n = _obj['filename']
+                file_n = file_n.split('/')
+                file_path = ('/'.join(file_n[1:3])) + '/'   # todo figure out a better format.
+                self.rmt_copy(host, send=True, fname=file_n[3], remote_path=file_path)
 
         return 0
 
@@ -136,6 +137,9 @@ class Setup(Base, Utils):
         """Nova setup will configure all necessary files for nova to enable live migration."""
 
         self.nova_config = self.make_config_obj('nova', '../configs/nova')
+        if os.mkdir('/tmp/nova_conf'):
+            os.chdir('/tmp/nova_conf')
+
         _nova_conf = dict(self.nova_config.items('nova_conf'))
 
         if self.rhel_ver >= 7:
@@ -147,16 +151,19 @@ class Setup(Base, Utils):
             nova_config_list = [_nova_conf]
 
         for conf in nova_config_list:
-            self.rmt_copy(self.nova_hosts[0], get=True, fname=conf['filename'])
+            self.rmt_copy(self.nova_hosts[0], get=True, remote_path=conf['filename'])
         for name, value in _nova_conf:
             self.adj_val(name, value, o_file='nova.conf', n_file='nova.conf.new')
 
     def nfs_server_setup(self):
-        """
-
+        """ NFS_Server setup will create an export file and copy this file to the nfs server, it will also
+        determine the release of RHEL and configure version 3 or 4 nfs service.
 
         """
         self.share_storage_config = self.make_config_obj('nfs_server', '../configs/share_storage')
+        if os.mkdir('/tmp/nfs_conf'):
+            os.chdir('/tmp/nfs_conf')
+
         _nfs_export = self.config_gettr(self.share_storage_config, 'nfs_export')['export']
         _nfs_export_attribute = self.config_gettr(self.share_storage_config, 'nfs_export')['attribute']
         _nfs_export_net = self.config_gettr(self.share_storage_config, 'nfs_export')['network']
@@ -166,18 +173,48 @@ class Setup(Base, Utils):
         if self.rhel_ver >= 7:
             _nfs_idmapd_filename = self.config_gettr(self.share_storage_config, 'nfs_idmapd')['filename']
             _nfs_idmapd_domain = self.config_gettr(self.share_storage_config, 'nfs_idmapd')['domain']
+            self.rmt_copy(_nfs_server_ip, get=True, remote_path=_nfs_idmapd_filename)
+            idmapd_filename = _nfs_idmapd_filename.split('/')
 
-        for file in [_nfs_export_filename, _nfs_idmapd_filename]:
-            self.rmt_copy(_nfs_server_ip, get=True, fname=file)
+            self.adj_val('Domain', _nfs_idmapd_domain, idmapd_filename[-1], idmapd_filename[-1]+'.new')
+            self.renamer('.')
+            self.rmt_copy(_nfs_server_ip, send=True, fname=idmapd_filename[-1], remote_path=_nfs_idmapd_filename)
 
+        nfs_exports_info = [_nfs_export, _nfs_export_net, _nfs_export_attribute]
+        export_fn = self.gen_file('exports', nfs_exports_info)
 
-
-
-        pass
+        self.rmt_copy(_nfs_server_ip, send=True, fname=export_fn, remote_path=_nfs_export_filename)
 
     def nfs_client_setup(self):
         """
 
 
         """
-        pass
+        if os.path.exists('/tmp/nfs_conf'):
+            pass
+        else:
+            os.mkdir('/tmp/nfs_conf')
+            os.chdir('/tmp/nfs_conf')
+
+        _fstab_filename = self.config_gettr(self.system_info_config, 'fstab')['filename']
+        _nfs_server = self.config_gettr(self.system_info_config, 'fstab')['nfs_server']
+        _nfs_mount_pt = self.config_gettr(self.system_info_config, 'fstab')['nfs_client_mount']
+        _nfs_fstype = self.config_gettr(self.system_info_config, 'fstab')['fstype']
+        _mnt_opts = self.config_gettr(self.system_info_config, 'fstab')['attribute']
+        _fsck_opt = self.config_gettr(self.system_info_config, 'fstab')['fsck']
+
+        fstab_entry = [_nfs_server, _nfs_mount_pt, _nfs_fstype, _mnt_opts, _fsck_opt]
+        fstab_entry = "    ".join(fstab_entry)
+
+        system_util = '/usr/bin/echo'
+
+        system_util_operator = '>>'
+
+        cmd = [system_util, fstab_entry, system_util_operator, _fstab_filename]
+
+        for host in self.nova_hosts:
+            self.rmt_exec(host, cmd)
+
+        return 0
+
+

@@ -37,14 +37,13 @@ class Utils(object):
         """
         if send is get:
             raise ValueError('Please set the direction for file copy.')
-        
+
         ssh = SSHClient()
         ssh.set_missing_host_key_policy(AutoAddPolicy())
         ssh.connect(hostname, username=username, password=password)
         scp = SCPClient(ssh.get_transport())
         if get:
-            os.chdir('/tmp')
-            scp.get(fname)
+            scp.get(remote_path=remote_path)
         elif send:
             scp.put(fname, remote_path=remote_path)
 
@@ -87,12 +86,12 @@ class Utils(object):
                 line[1] = value
             w.write('='.join(line))
 
-    def gen_file(self, value, filename, nfs_export=False):
+    def gen_file(self, filename, value, nfs_export=False):
 
         """gen_file will create a new file according to the input provided.
 
-        :param value: is a list of data to be written to the given config file.
         :param filename: output name for the configuration file to be written.
+        :param value: is a list of data to be written to the given config file.
         :param nfs_export: flag which determines to format output for /etc/exports
         """
         try:
@@ -108,7 +107,8 @@ class Utils(object):
             fh.write('%s   ' % i)
 
         try:
-            fh.close()
+            if fh.close():
+                return filename
         except IOError as ie:
             print "Couldn't close {0} do to: {1}".format(filename, ie.strerror)
 
