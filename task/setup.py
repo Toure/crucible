@@ -216,5 +216,3 @@ class Setup(Base, Utils):
             self.rmt_exec(host, cmd)
 
         return 0
-
-
