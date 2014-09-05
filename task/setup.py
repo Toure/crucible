@@ -186,8 +186,7 @@ class Setup(Base, Utils):
         self.rmt_copy(_nfs_server_ip, send=True, fname=export_fn, remote_path=_nfs_export_filename)
 
     def nfs_client_setup(self):
-        """
-
+        """NFS client function will append mount option for live migration to the compute nodes fstab file.
 
         """
         if os.path.exists('/tmp/nfs_conf'):
