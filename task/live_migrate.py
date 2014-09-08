@@ -8,7 +8,7 @@ import ConfigParser
 try:
     from packstack.installer import run_setup
 except ImportError as IE:
-    print IE.message
+    raise IE("Please make sure that packstack is correctly installed.")
 
 
 class Base(object):
@@ -36,7 +36,7 @@ class Base(object):
             obj.read(path)
             return obj
         except AttributeError as AE:
-            print AE.message
+            raise AE('Could not create instance object with current info: cfgname {0}, path {1}'.format(cfgname, path))
 
     def config_gettr(self, config_reader, section):
         """
@@ -73,8 +73,8 @@ class Config(Base, Utils):
             answer_file = self.make_config_obj('packstack_ans', answerfile)
             try:
                 answer_file.set('general', 'CONFIG_COMPUTE_HOSTS', self.nova_hosts)
-            except IOError as e:
-                print e.message
+            except ConfigParser.NoSectionError as ne:
+                raise ne('Invalid section specified: {}'.format('general'))
             run_setup._main(configFile=answerfile)
         else:
             print("Couldn't find packstack answer file")
@@ -210,8 +210,9 @@ class Config(Base, Utils):
         system_util_operator = '>>'
 
         cmd = [system_util, fstab_entry, system_util_operator, _fstab_filename]
+        rmt_cmd = " ".join(cmd)
 
         for host in self.nova_hosts:
-            self.rmt_exec(host, cmd)
+            self.rmt_exec(host, rmt_cmd)
 
         return 0
