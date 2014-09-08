@@ -56,9 +56,9 @@ class Base(object):
         return value
 
 
-class Setup(Base, Utils):
+class Config(Base, Utils):
     def __init__(self):
-        super(Setup, self).__init__()
+        super(Config, self).__init__()
         self.rhel_ver = self.system_version()
 
     def system_setup(self):
