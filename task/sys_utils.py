@@ -112,12 +112,12 @@ class Utils(object):
         except IOError as ie:
             print "Couldn't close {0} do to: {1}".format(filename, ie.strerror)
 
-    def renamer(self, file_path):
+    def renamer(self, file_path='.'):
 
         """rename is a function responsible for taking the original configuration files and swapping them
         with the newly altered configuration file.
 
-        :param file_path: directory path in which to find files.
+        :param file_path: directory path in which to find files. default: to present working directory.
         """
         file_ext = {'conf': '.org', 'conf.new': '.conf', 'new': ''}
         for _file in os.listdir(file_path):
