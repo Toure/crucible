@@ -8,7 +8,7 @@ import ConfigParser
 try:
     from packstack.installer import run_setup
 except ImportError as IE:
-    print IE.message
+    raise IE("Please make sure that packstack is correctly installed.")
 
 
 class Base(object):
@@ -35,8 +35,8 @@ class Base(object):
             obj = getattr(self, cfgname)
             obj.read(path)
             return obj
-        except AttributeError as ae:
-            print ae.message
+        except AttributeError as AE:
+            raise AE('Could not create instance object with current info: cfgname {0}, path {1}'.format(cfgname, path))
 
     def config_gettr(self, config_reader, section):
         """
@@ -56,9 +56,9 @@ class Base(object):
         return value
 
 
-class Setup(Base, Utils):
+class Config(Base, Utils):
     def __init__(self):
-        super(Setup, self).__init__()
+        super(Config, self).__init__()
         self.rhel_ver = self.system_version()
 
     def system_setup(self):
@@ -73,8 +73,8 @@ class Setup(Base, Utils):
             answer_file = self.make_config_obj('packstack_ans', answerfile)
             try:
                 answer_file.set('general', 'CONFIG_COMPUTE_HOSTS', self.nova_hosts)
-            except IOError as e:
-                print e.message
+            except ConfigParser.NoSectionError as ne:
+                raise ne('Invalid section specified: {}'.format('general'))
             run_setup._main(configFile=answerfile)
         else:
             print("Couldn't find packstack answer file")
@@ -122,7 +122,7 @@ class Setup(Base, Utils):
             self.adj_val(name, value, 'libvirtd.conf', 'libvirtd.conf.new')
         self.adj_val('LIBVIRTD_ARGS', 'listen', 'libvirtd', 'libvirtd.new')
 
-        self.renamer()
+        self.renamer('/tmp')
 
         for host in self.nova_hosts:
             for _obj in [_libvirtd_conf, _libvirtd_sysconf]:
@@ -153,10 +153,7 @@ class Setup(Base, Utils):
         for conf in nova_config_list:
             self.rmt_copy(self.nova_hosts[0], get=True, remote_path=conf['filename'])
         for name, value in _nova_conf:
-            self.adj_val(name, value, 'nova.conf', 'nova.conf.new')
-        self.renamer()
-        for host in self.nova_hosts:
-            self.rmt_copy(host, send=True, fname='nova.conf', remote_path=_nova_conf['filename'])
+            self.adj_val(name, value, o_file='nova.conf', n_file='nova.conf.new')
 
     def nfs_server_setup(self):
         """ NFS_Server setup will create an export file and copy this file to the nfs server, it will also
@@ -180,15 +177,13 @@ class Setup(Base, Utils):
             idmapd_filename = _nfs_idmapd_filename.split('/')
 
             self.adj_val('Domain', _nfs_idmapd_domain, idmapd_filename[-1], idmapd_filename[-1]+'.new')
-            self.renamer()
+            self.renamer('.')
             self.rmt_copy(_nfs_server_ip, send=True, fname=idmapd_filename[-1], remote_path=_nfs_idmapd_filename)
 
         nfs_exports_info = [_nfs_export, _nfs_export_net, _nfs_export_attribute]
         export_fn = self.gen_file('exports', nfs_exports_info)
 
         self.rmt_copy(_nfs_server_ip, send=True, fname=export_fn, remote_path=_nfs_export_filename)
-
-        return 0
 
     def nfs_client_setup(self):
         """NFS client function will append mount option for live migration to the compute nodes fstab file.
@@ -215,9 +210,9 @@ class Setup(Base, Utils):
         system_util_operator = '>>'
 
         cmd = [system_util, fstab_entry, system_util_operator, _fstab_filename]
-        cmd = "  ".join(cmd)
+        rmt_cmd = " ".join(cmd)
 
         for host in self.nova_hosts:
-            self.rmt_exec(host, cmd)
+            self.rmt_exec(host, rmt_cmd)
 
         return 0
