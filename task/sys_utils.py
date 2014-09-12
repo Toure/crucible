@@ -80,7 +80,13 @@ class Utils(object):
         w = open(n_file, 'w')
         lines = r.readlines()
         for line in lines:
-            line.split('=')
+            if '=' in line:
+                delimiter = '='
+            elif ':' in line:
+                delimiter = ':'
+            else:
+                break
+            line = line.split(delimiter)
             if token in line[0]:
                 if line[0].startswith('#'):
                     line[0] = line[0].replace('#', '')
@@ -112,6 +118,7 @@ class Utils(object):
                 return filename
         except IOError as ie:
             print "Couldn't close {0} do to: {1}".format(filename, ie.strerror)
+            raise ie
 
     def renamer(self, file_path):
 

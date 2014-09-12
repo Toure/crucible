@@ -4,11 +4,8 @@ __author__ = 'toure'
 
 import os
 import ConfigParser
-
-try:
-    from packstack.installer import run_setup
-except ImportError as IE:
-    raise IE("Please make sure that packstack is correctly installed.")
+from configs.configs import get_path
+from subprocess import call
 
 
 class Base(object):
@@ -35,8 +32,8 @@ class Base(object):
             obj = getattr(self, cfgname)
             obj.read(path)
             return obj
-        except AttributeError as AE:
-            raise AE('Could not create instance object with current info: cfgname {0}, path {1}'.format(cfgname, path))
+        except AttributeError:
+            raise AttributeError("Could not create instance object with current info: cfgname {0}, path {1}".format(cfgname, path))
 
     def config_gettr(self, config_reader, section):
         """
@@ -50,10 +47,10 @@ class Base(object):
                 bucket[value] = config_reader.get(section, value)
                 if bucket[value] == -1:
                     print('No value found %s' % value)
-            except KeyError:
+            except ValueError:
                 print("exception on %s!" % value)
                 bucket[value] = None
-        return value
+        return bucket
 
 
 class Config(Base, Utils):
@@ -64,23 +61,24 @@ class Config(Base, Utils):
     def system_setup(self):
         """System setup will determine RHEL version and configure the correct services per release info.
         """
-        self.system_info_config = self.make_config_obj('sys_info', '../configs/system_info')
+        self.system_info_config = self.make_config_obj('sys_info', get_path('system_info'))
         answerfile = self.config_gettr(self.system_info_config, 'packstack')['filename']
-        run_setup.generateAnswerFile(answerfile)
+        call(['packstack', '--gen-answer-file', answerfile])
 
         if os.path.exists(answerfile):
             self.nova_hosts = self.config_gettr(self.system_info_config, 'nova')['NOVA_COMPUTE_HOSTS']
-            answer_file = self.make_config_obj('packstack_ans', answerfile)
+            mod_answerfile = self.make_config_obj('packstack_ans', answerfile)
             try:
-                answer_file.set('general', 'CONFIG_COMPUTE_HOSTS', self.nova_hosts)
-            except ConfigParser.NoSectionError as ne:
-                raise ne('Invalid section specified: {}'.format('general'))
-            run_setup._main(configFile=answerfile)
+                mod_answerfile.set('general', 'CONFIG_COMPUTE_HOSTS', self.nova_hosts)
+            except ConfigParser.NoSectionError:
+                raise ConfigParser.NoSectionError('Invalid section specified: {}'.format('general'))
+            print('mod_answerfile is type: {}'.format(type(mod_answerfile)))
+            call(['packstack', '--answer-file', '=', mod_answerfile])
         else:
             print("Couldn't find packstack answer file")
             exit()
 
-        return 0
+        return 1
 
     def firewall_setup(self):
         """Firewall setup will open necessary ports on all compute nodes to allow libvirtd, nfs_server to
@@ -101,7 +99,7 @@ class Config(Base, Utils):
                     continue
                 else:
                     raise EnvironmentError('The remote command failed {}'.format(stdout[1]))
-        return 0
+        return 1
 
     def libvirtd_setup(self):
         """ libvirtd setup will configure libvirtd to listen on the external network interface.
@@ -131,7 +129,7 @@ class Config(Base, Utils):
                 file_path = ('/'.join(file_n[1:3])) + '/'   # todo figure out a better format.
                 self.rmt_copy(host, send=True, fname=file_n[3], remote_path=file_path)
 
-        return 0
+        return 1
 
     def nova_setup(self):
         """Nova setup will configure all necessary files for nova to enable live migration."""
@@ -215,4 +213,4 @@ class Config(Base, Utils):
         for host in self.nova_hosts:
             self.rmt_exec(host, rmt_cmd)
 
-        return 0
+        return 1
