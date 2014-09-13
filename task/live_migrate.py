@@ -67,15 +67,15 @@ class Config(Base, Utils):
 
         if os.path.exists(answerfile):
             self.nova_hosts = self.config_gettr(self.system_info_config, 'nova')['NOVA_COMPUTE_HOSTS']
-            mod_answerfile = self.make_config_obj('packstack_ans', answerfile)
             try:
-                mod_answerfile.set('general', 'CONFIG_COMPUTE_HOSTS', self.nova_hosts)
-            except ConfigParser.NoSectionError:
-                raise ConfigParser.NoSectionError('Invalid section specified: {}'.format('general'))
-            print('mod_answerfile is type: {}'.format(type(mod_answerfile)))
-            call(['packstack', '--answer-file', '=', mod_answerfile])
+                self.adj_val('CONFIG_COMPUTE_HOSTS', self.nova_hosts, answerfile, answerfile + '.new')
+                self.renamer(os.path.dirname(answerfile))
+            except IOError:
+                raise IOError("Couldn't rename {}".format(answerfile))
+
+            call(['packstack', '--answer-file', answerfile])
         else:
-            print("Couldn't find packstack answer file")
+            print("Couldn't find packstack answer file: {}".format(answerfile))
             exit()
 
         return 1
@@ -86,7 +86,7 @@ class Config(Base, Utils):
 
         :return: upon success zero is returned if not an exception is raised.
         """
-        self.firewall_config = self.make_config_obj('firewall', '../configs/firewall')
+        self.firewall_config = self.make_config_obj('firewall', get_path('firewall'))
         nfs_tcp = self.config_gettr(self.firewall_config, 'nfs rules')['tcp_ports']
         nfs_udp = self.config_gettr(self.firewall_config, 'nfs rules')['udp_ports']
         libvirtd_tcp = self.config_gettr(self.firewall_config, 'libvirtd rules')['tcp_ports']
@@ -106,7 +106,7 @@ class Config(Base, Utils):
 
         :return: upon success zero is returned if not an exception is raised.
         """
-        self.libvirtd_config = self.make_config_obj('libvirtd', '../configs/libvirtd')
+        self.libvirtd_config = self.make_config_obj('libvirtd', get_path('libvirtd'))
         if os.mkdir('/tmp/libvirtd_conf'):
             os.chdir('/tmp/libvirtd_conf')
 
@@ -134,7 +134,7 @@ class Config(Base, Utils):
     def nova_setup(self):
         """Nova setup will configure all necessary files for nova to enable live migration."""
 
-        self.nova_config = self.make_config_obj('nova', '../configs/nova')
+        self.nova_config = self.make_config_obj('nova', get_path('nova'))
         if os.mkdir('/tmp/nova_conf'):
             os.chdir('/tmp/nova_conf')
 
@@ -158,7 +158,7 @@ class Config(Base, Utils):
         determine the release of RHEL and configure version 3 or 4 nfs service.
 
         """
-        self.share_storage_config = self.make_config_obj('nfs_server', '../configs/share_storage')
+        self.share_storage_config = self.make_config_obj('nfs_server', get_path('share_storage'))
         if os.mkdir('/tmp/nfs_conf'):
             os.chdir('/tmp/nfs_conf')
 

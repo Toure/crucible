@@ -127,7 +127,7 @@ class Utils(object):
 
         :param file_path: directory path in which to find files.
         """
-        file_ext = {'conf': '.org', 'conf.new': '.conf', 'new': ''}
+        file_ext = {'conf': '.org', 'conf.new': '.conf', 'txt': '.org', 'new': ''}
         for _file in os.listdir(file_path):
             for name, value in file_ext:
                 if _file.endswith(file_ext[name]):
@@ -136,7 +136,7 @@ class Utils(object):
                         os.rename(_file, _file_new[0] + value)
                     except IOError as ie:
                         print ie.message
-        return 0
+        return 1
 
 
 
