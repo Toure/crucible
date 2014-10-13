@@ -24,7 +24,7 @@ class Utils(object):
             print('This is an unsupported distribution version: %s' % distro_name)
             exit()
 
-    def rmt_copy(self, hostname, username='root', password='qum5net', get=False,
+    def rmt_copy(self, hostname, username='root', password='', get=False,
                  send=False, fname=None, remote_path=None):
         """Remote copy function retrieves files from specified host.
 
@@ -48,7 +48,7 @@ class Utils(object):
         elif send:
             scp.put(fname, remote_path=remote_path)
 
-    def rmt_exec(self, hostname, cmd, username='root', password='qum5net'):
+    def rmt_exec(self, hostname, cmd, username='root', password=''):
         """Remote execution function to run defined commands.
 
         :param hostname: server hostname in which to run command.

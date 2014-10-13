@@ -39,7 +39,7 @@ provision_demo: n
 [ssh_creds]
 #make sure all systems have the same credentials.
 username: root
-password: redhat
+password: none
 
 [selinux]
 setsebool: nfs_export_all_rw
