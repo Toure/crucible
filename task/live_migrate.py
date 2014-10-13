@@ -18,7 +18,7 @@ class Base(object):
         self.nova_config = None
         self.share_storage_config = None
         self.system_info_config = None
-        self.nova_hosts = None
+        self.nova_hosts_value = None
 
     def make_config_obj(self, cfgname, path):
         """
@@ -65,10 +65,11 @@ class Config(Base, Utils):
         answerfile = self.config_gettr(self.system_info_config, 'packstack')['filename']
         call(['packstack', '--gen-answer-file', answerfile])
 
-        if os.path.exists(answerfile):
-            self.nova_hosts = self.config_gettr(self.system_info_config, 'nova')['NOVA_COMPUTE_HOSTS']
+        if os.path.exists(answerfile) and os.stat(answerfile)[6] != 0:
+            #check to see if the file exist and its not empty.
+            self.nova_hosts_value = self.config_gettr(self.system_info_config, 'nova')['NOVA_COMPUTE_HOSTS']
             try:
-                self.adj_val('CONFIG_COMPUTE_HOSTS', self.nova_hosts, answerfile, answerfile + '.new')
+                self.adj_val('CONFIG_COMPUTE_HOSTS', self.nova_hosts_value, answerfile, answerfile + '.new')
                 self.renamer(os.path.dirname(answerfile))
             except IOError:
                 raise IOError("Couldn't rename {}".format(answerfile))
@@ -91,7 +92,7 @@ class Config(Base, Utils):
         nfs_udp = self.config_gettr(self.firewall_config, 'nfs rules')['udp_ports']
         libvirtd_tcp = self.config_gettr(self.firewall_config, 'libvirtd rules')['tcp_ports']
 
-        for host in self.nova_hosts:
+        for host in self.nova_hosts_value:
             for ports in [nfs_tcp, nfs_udp, libvirtd_tcp]:
                 cmd = "iptables -A INPUT -p tcp --dport {0:s} -j ACCEPT".format(ports)
                 stdout = self.rmt_exec(host, cmd)
@@ -114,7 +115,7 @@ class Config(Base, Utils):
         _libvirtd_sysconf = dict(self.libvirtd_config.items('libvirtd_sysconfig'))
 
         for _dict_obj in [_libvirtd_conf, _libvirtd_sysconf]:
-            self.rmt_copy(self.nova_hosts[0], get=True, remote_path=_dict_obj['filename'])
+            self.rmt_copy(self.nova_hosts_value[0], get=True, remote_path=_dict_obj['filename'])
 
         for name, value in _libvirtd_conf:
             self.adj_val(name, value, 'libvirtd.conf', 'libvirtd.conf.new')
@@ -122,7 +123,7 @@ class Config(Base, Utils):
 
         self.renamer('/tmp')
 
-        for host in self.nova_hosts:
+        for host in self.nova_hosts_value:
             for _obj in [_libvirtd_conf, _libvirtd_sysconf]:
                 file_n = _obj['filename']
                 file_n = file_n.split('/')
@@ -149,7 +150,7 @@ class Config(Base, Utils):
             nova_config_list = [_nova_conf]
 
         for conf in nova_config_list:
-            self.rmt_copy(self.nova_hosts[0], get=True, remote_path=conf['filename'])
+            self.rmt_copy(self.nova_hosts_value[0], get=True, remote_path=conf['filename'])
         for name, value in _nova_conf:
             self.adj_val(name, value, o_file='nova.conf', n_file='nova.conf.new')
 
@@ -210,7 +211,7 @@ class Config(Base, Utils):
         cmd = [system_util, fstab_entry, system_util_operator, _fstab_filename]
         rmt_cmd = " ".join(cmd)
 
-        for host in self.nova_hosts:
+        for host in self.nova_hosts_value:
             self.rmt_exec(host, rmt_cmd)
 
         return 1

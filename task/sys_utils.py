@@ -80,18 +80,22 @@ class Utils(object):
         w = open(n_file, 'w')
         lines = r.readlines()
         for line in lines:
-            if '=' in line:
-                delimiter = '='
-            elif ':' in line:
-                delimiter = ':'
+            if token in line:
+                if '=' in line:
+                    delimiter = '='
+                elif ':' in line:
+                    delimiter = ':'
             else:
-                break
+                w.write(line)
+                continue
             line = line.split(delimiter)
             if token in line[0]:
                 if line[0].startswith('#'):
                     line[0] = line[0].replace('#', '')
                 line[1] = value
-            w.write('='.join(line))
+            w.write('='.join(line[0:2]))
+        w.close()
+        r.close()
 
     def gen_file(self, filename, value, nfs_export=False):
 
@@ -127,13 +131,14 @@ class Utils(object):
 
         :param file_path: directory path in which to find files.
         """
-        file_ext = {'conf': '.org', 'conf.new': '.conf', 'txt': '.org', 'new': ''}
+        file_ext = {'conf': '.org', 'conf.new': '.conf', 'txt': '.org', 'txt.new': '.txt'}
         for _file in os.listdir(file_path):
-            for name, value in file_ext:
-                if _file.endswith(file_ext[name]):
+            for ext in file_ext.items():
+                if _file.endswith(ext[0]):
                     _file_new = _file.split('.')
                     try:
-                        os.rename(_file, _file_new[0] + value)
+                        os.chdir(file_path)
+                        os.rename(_file, _file_new[0] + file_ext[ext[0]])
                     except IOError as ie:
                         print ie.message
         return 1
