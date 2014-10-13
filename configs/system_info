@@ -2,39 +2,44 @@
 filename: /tmp/rhos_live_migration.txt
 
 [mysql]
-MYSQL_INSTALL: y
+mysql_install: y
 
 [glance]
-GLANCE_INSTALL: y
+glance_install: y
 
 [cinder]
-CINDER_INSTALL: y
+cinder_install: y
 
 [nova]
-NOVA_INSTALL: y
-#CONFIG_NOVA_COMPUTE_HOSTS key will take a list ei: 192.168.0.10, 172.16.1.10
-NOVA_COMPUTE_HOSTS:
+nova_install: y
+#config_nova_compute_hosts key will take a list ei: 192.168.0.10, 172.16.1.10
+nova_compute_hosts:
 
 [neutron]
-NEUTRON_INSTALL: y
+neutron_install: y
 
 [horizon]
-HORIZON_INSTALL: y
+horizon_install: y
 
 [swift]
-SWIFT_INSTALL: y
+swift_install: y
 
 [ceilometer]
-CEILOMETER_INSTALL: y
+ceilometer_install: y
 
 [heat]
-HEAT_INSTALL: n
+heat_install: n
 
 [nagios]
-NAGIOS_INSTALL: y
+nagios_install: y
 
 [demo]
-PROVISION_DEMO: n
+provision_demo: n
+
+[ssh_creds]
+#make sure all systems have the same credentials.
+username: root
+password: redhat
 
 [selinux]
 setsebool: nfs_export_all_rw
