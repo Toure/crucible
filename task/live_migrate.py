@@ -62,6 +62,8 @@ class Config(Base, Utils):
         self.firewall_config_obj = self.make_config_obj('firewall', get_path('firewall'))
         self.libvirtd_config_obj = self.make_config_obj('libvirtd', get_path('libvirtd'))
         self.nova_config_obj = self.make_config_obj('nova', get_path('nova'))
+        self.nova_hosts_value = self.config_gettr(self.system_info_obj, 'nova')['nova_compute_hosts']
+        self.nova_hosts_list = str(self.nova_hosts_value).split(',')
         self.share_storage_config_obj = self.make_config_obj('nfs_server', get_path('share_storage'))
         self.ssh_uid = self.config_gettr(self.ssh_creds_obj, 'ssh_creds')['username']
         self.ssh_pass = self.config_gettr(self.ssh_creds_obj, 'ssh_creds')['password']
@@ -74,7 +76,6 @@ class Config(Base, Utils):
 
         if os.path.exists(answerfile) and os.stat(answerfile)[6] != 0:
             #check to see if the file exist and its not empty.
-            self.nova_hosts_value = self.config_gettr(self.system_info_obj, 'nova')['NOVA_COMPUTE_HOSTS']
             try:
                 self.adj_val('CONFIG_COMPUTE_HOSTS', self.nova_hosts_value, answerfile, answerfile + '.new')
                 self.renamer(os.path.dirname(answerfile))
@@ -98,14 +99,14 @@ class Config(Base, Utils):
         nfs_udp = self.config_gettr(self.firewall_config_obj, 'nfs rules')['udp_ports']
         libvirtd_tcp = self.config_gettr(self.firewall_config_obj, 'libvirtd rules')['tcp_ports']
 
-        for host in self.nova_hosts_value:
+        for host in self.nova_hosts_list:
             for ports in [nfs_tcp, nfs_udp, libvirtd_tcp]:
-                cmd = "iptables -A INPUT -p tcp --dport {0:s} -j ACCEPT".format(ports)
-                stdout = self.rmt_exec(host, cmd, username=self.ssh_uid, password=self.ssh_pass)
-                if len(stdout[1]) == 0:
+                cmd = "iptables -A INPUT -m multiport -p tcp --dport {0:s} -j ACCEPT".format(ports)
+                ret = self.rmt_exec(host, cmd, username=self.ssh_uid, password=self.ssh_pass)
+                if len(ret[1]) == 0:
                     continue
                 else:
-                    raise EnvironmentError('The remote command failed {}'.format(stdout[1]))
+                    raise EnvironmentError('The remote command failed {}'.format(ret[1]))
         return 1
 
     def libvirtd_setup(self):
@@ -113,14 +114,17 @@ class Config(Base, Utils):
 
         :return: upon success zero is returned if not an exception is raised.
         """
-        if os.mkdir('/tmp/libvirtd_conf'):
+        if os.path.isdir('/tmp/libvirtd_conf'):
             os.chdir('/tmp/libvirtd_conf')
+        else:
+            os.mkdir('/tmp/libvirt_conf')
+            os.chdir('/tmp/libvirt_conf')
 
         _libvirtd_conf = dict(self.libvirtd_config_obj.items('libvirtd_conf'))
         _libvirtd_sysconf = dict(self.libvirtd_config_obj.items('libvirtd_sysconfig'))
 
         for _dict_obj in [_libvirtd_conf, _libvirtd_sysconf]:
-            self.rmt_copy(self.nova_hosts_value[0], username=self.ssh_uid, password=self.ssh_pass,
+            self.rmt_copy(self.nova_hosts_list[0], username=self.ssh_uid, password=self.ssh_pass,
                           get=True, remote_path=_dict_obj['filename'])
 
         for name, value in _libvirtd_conf:
@@ -129,7 +133,7 @@ class Config(Base, Utils):
 
         self.renamer('/tmp')
 
-        for host in self.nova_hosts_value:
+        for host in self.nova_hosts_list:
             for _obj in [_libvirtd_conf, _libvirtd_sysconf]:
                 file_n = _obj['filename']
                 file_n = file_n.split('/')
@@ -142,7 +146,10 @@ class Config(Base, Utils):
     def nova_setup(self):
         """Nova setup will configure all necessary files for nova to enable live migration."""
 
-        if os.mkdir('/tmp/nova_conf'):
+        if os.path.isdir('/tmp/nova_conf'):
+            os.chdir('/tmp/nova_conf')
+        else:
+            os.mkdir('/tmp/nova_conf')
             os.chdir('/tmp/nova_conf')
 
         _nova_conf = dict(self.nova_config_obj.items('nova_conf'))
@@ -156,7 +163,7 @@ class Config(Base, Utils):
             _nova_config_list = [_nova_conf]
 
         for conf in _nova_config_list:
-            self.rmt_copy(self.nova_hosts_value[0], username=self.ssh_uid, password=self.ssh_pass,
+            self.rmt_copy(self.nova_hosts_list[0], username=self.ssh_uid, password=self.ssh_pass,
                           get=True, remote_path=conf['filename'])
         for name, value in _nova_conf:
             self.adj_val(name, value, o_file='nova.conf', n_file='nova.conf.new')
@@ -166,7 +173,10 @@ class Config(Base, Utils):
         determine the release of RHEL and configure version 3 or 4 nfs service.
 
         """
-        if os.mkdir('/tmp/nfs_conf'):
+        if os.path.isdir('/tmp/nfs_conf'):
+            os.chdir('/tmp/nfs_conf')
+        else:
+            os.mkdir('/tmp/nfs_conf')
             os.chdir('/tmp/nfs_conf')
 
         _nfs_export = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['export']
@@ -196,8 +206,8 @@ class Config(Base, Utils):
         """NFS client function will append mount option for live migration to the compute nodes fstab file.
 
         """
-        if os.path.exists('/tmp/nfs_conf'):
-            pass
+        if os.path.isdir('/tmp/nfs_conf'):
+            os.chdir('/tmp/nfs_conf')
         else:
             os.mkdir('/tmp/nfs_conf')
             os.chdir('/tmp/nfs_conf')
@@ -219,7 +229,7 @@ class Config(Base, Utils):
         cmd = [system_util, fstab_entry, system_util_operator, _fstab_filename]
         rmt_cmd = " ".join(cmd)
 
-        for host in self.nova_hosts_value:
-            self.rmt_exec(host, username=self.ssh_uid, password=self.ssh_pass, rmt_cmd)
+        for host in self.nova_hosts_list:
+            self.rmt_exec(host, username=self.ssh_uid, password=self.ssh_pass)
 
         return 1

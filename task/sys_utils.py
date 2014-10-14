@@ -60,7 +60,7 @@ class Utils(object):
         """
         ssh = SSHClient()
         ssh.set_missing_host_key_policy(AutoAddPolicy())
-        ssh.connect(hostname, username=username, password=password)
+        ssh.connect(hostname, port=22, username=username, password=password)
         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command(cmd)
 
         ssh_stdoutput = ssh_stdout.readlines()
