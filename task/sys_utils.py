@@ -25,7 +25,7 @@ class Utils(object):
             exit()
 
     def rmt_copy(self, hostname, username='root', password='qum5net', get=False,
-                 send=False, fname=None, remote_path=None):
+                 send=False, fname=None, remote_path=None, local_path=None):
         """Remote copy function retrieves files from specified host.
 
         :param hostname: host name or ip address
@@ -38,13 +38,13 @@ class Utils(object):
         """
         if send is get:
             raise ValueError('Please set the direction for file copy.')
-
+        str(hostname) # to satisfy paramiko.
         ssh = SSHClient()
         ssh.set_missing_host_key_policy(AutoAddPolicy())
         ssh.connect(hostname, username=username, password=password)
         scp = SCPClient(ssh.get_transport())
         if get:
-            scp.get(remote_path=remote_path)
+            scp.get(remote_path, local_path=local_path)
         elif send:
             scp.put(fname, remote_path=remote_path)
 

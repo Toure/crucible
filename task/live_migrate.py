@@ -131,7 +131,7 @@ class Config(Base, Utils):
             self.adj_val(name, value, 'libvirtd.conf', 'libvirtd.conf.new')
         self.adj_val('LIBVIRTD_ARGS', 'listen', 'libvirtd', 'libvirtd.new')
 
-        self.renamer('/tmp')
+        self.renamer('/tmp/libvirt_conf')
 
         for host in self.nova_hosts_list:
             for _obj in [_libvirtd_conf, _libvirtd_sysconf]:
@@ -192,7 +192,7 @@ class Config(Base, Utils):
             idmapd_filename = _nfs_idmapd_filename.split('/')
 
             self.adj_val('Domain', _nfs_idmapd_domain, idmapd_filename[-1], idmapd_filename[-1]+'.new')
-            self.renamer('.')
+            self.renamer('/tmp/nfs_conf')
             self.rmt_copy(_nfs_server_ip, username=self.ssh_uid, password=self.ssh_pass,
                           send=True, fname=idmapd_filename[-1], remote_path=_nfs_idmapd_filename)
 
