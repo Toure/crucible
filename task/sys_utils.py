@@ -5,7 +5,11 @@ import platform
 import os
 from paramiko import SSHClient
 from paramiko import AutoAddPolicy
-from scp import SCPClient
+try:
+    from scpclient import closing, Read, Write
+except ImportError:
+    from subprocess import call
+    call('pip', 'install', 'scpclient')
 
 
 class Utils(object):
@@ -32,21 +36,23 @@ class Utils(object):
         :param username: user which will have privalege to copy files to and from system.
         :param password: password for defined user.
         :param get: flag to receive files
+        :type  get: bool
         :param send: flag to send files
+        :type  send: bool
         :param fname: file name which to transport
         :param remote_path: where to place the file on the other end.
         """
         if send is get:
             raise ValueError('Please set the direction for file copy.')
-        str(hostname) # to satisfy paramiko.
         ssh = SSHClient()
         ssh.set_missing_host_key_policy(AutoAddPolicy())
         ssh.connect(hostname, username=username, password=password)
-        scp = SCPClient(ssh.get_transport())
         if get:
-            scp.get(remote_path, local_path=local_path)
+            with closing(Read(ssh.get_transport(), remote_path)) as scp:
+                scp.receive_file(fname)
         elif send:
-            scp.put(fname, remote_path=remote_path)
+            with closing(Write(ssh.get_transport(), remote_path)) as scp:
+                scp.send_file(fname, send)
 
     def rmt_exec(self, hostname, cmd, username='root', password='qum5net'):
         """Remote execution function to run defined commands.
@@ -85,6 +91,8 @@ class Utils(object):
                     delimiter = '='
                 elif ':' in line:
                     delimiter = ':'
+                else:
+                    continue
             else:
                 w.write(line)
                 continue
@@ -131,7 +139,8 @@ class Utils(object):
 
         :param file_path: directory path in which to find files. default: to present working directory.
         """
-        file_ext = {'conf': '.org', 'conf.new': '.conf', 'txt': '.org', 'txt.new': '.txt'}
+        file_ext = {'conf': '.conf.org', 'conf.new': '.conf', 'txt': '.txt.org',
+                    'txt.new': '.txt', '': '_org', 'new': ''}
         for _file in os.listdir(file_path):
             for ext in file_ext.items():
                 if _file.endswith(ext[0]):

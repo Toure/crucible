@@ -1,16 +1,20 @@
 [nova_conf]
-filename:/etc/nova/nova.conf
+filename: nova.conf
+filepath: /etc/nova
 state_path: /openstack
 live_migration_flag: VIR_MIGRATE_UNDEFINE_SOURCE, VIR_MIGRATE_PEER2PEER, VIR_MIGRATE_LIVE
 
 [nova_api_service]
-filename: /usr/lib/systemd/system/openstack-nova-api.service
+filename: openstack-nova-api.service
+filepath: /usr/lib/systemd/system
 After: syslog.target network.target nfs-mountd.service nfs-server.service openstack.mount
 
 [nova_cert_service]
-filename: /usr/lib/systemd/system/openstack-nova-cert.service
+filename: openstack-nova-cert.service
+filepath: /usr/lib/systemd/system
 After: syslog.target network.target openstack.mount
 
 [nova_compute_service]
-filename: /usr/lib/systemd/system/openstack-nova-compute.service
+filename: openstack-nova-compute.service
+filepath: /usr/lib/systemd/system
 After: syslog.target network.target openstack.mount

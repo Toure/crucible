@@ -45,7 +45,8 @@ password: redhat
 setsebool: nfs_export_all_rw
 
 [fstab]
-filename: /etc/fstab
+filename: fstab
+filepath: /etc
 nfs_server: x.x.x.x:/
 nfs_client_mount: /openstack
 fstype: nfs4

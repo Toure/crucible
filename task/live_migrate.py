@@ -125,21 +125,18 @@ class Config(Base, Utils):
 
         for _dict_obj in [_libvirtd_conf, _libvirtd_sysconf]:
             self.rmt_copy(self.nova_hosts_list[0], username=self.ssh_uid, password=self.ssh_pass,
-                          get=True, remote_path=_dict_obj['filename'])
+                          get=True, fname=_dict_obj['filename'], remote_path=_dict_obj['filepath'])
 
-        for name, value in _libvirtd_conf:
+        for name, value in _libvirtd_conf.items():
             self.adj_val(name, value, 'libvirtd.conf', 'libvirtd.conf.new')
         self.adj_val('LIBVIRTD_ARGS', 'listen', 'libvirtd', 'libvirtd.new')
 
-        self.renamer('/tmp/libvirt_conf')
+        self.renamer()
 
         for host in self.nova_hosts_list:
             for _obj in [_libvirtd_conf, _libvirtd_sysconf]:
-                file_n = _obj['filename']
-                file_n = file_n.split('/')
-                file_path = ('/'.join(file_n[1:3])) + '/'   # todo figure out a better format.
                 self.rmt_copy(host, username=self.ssh_uid, password=self.ssh_pass,
-                              send=True, fname=file_n[3], remote_path=file_path)
+                              send=True, fname=_obj['filename'], remote_path=_obj['filepath'])
 
         return 1
 
@@ -164,7 +161,7 @@ class Config(Base, Utils):
 
         for conf in _nova_config_list:
             self.rmt_copy(self.nova_hosts_list[0], username=self.ssh_uid, password=self.ssh_pass,
-                          get=True, remote_path=conf['filename'])
+                          get=True, fname=conf['filename'], remote_path=conf['filepath'])
         for name, value in _nova_conf:
             self.adj_val(name, value, o_file='nova.conf', n_file='nova.conf.new')
 
