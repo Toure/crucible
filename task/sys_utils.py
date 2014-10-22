@@ -5,11 +5,9 @@ import platform
 import os
 from paramiko import SSHClient
 from paramiko import AutoAddPolicy
-try:
-    from scpclient import closing, Read, Write
-except ImportError:
-    from subprocess import call
-    call('pip', 'install', 'scpclient')
+from scpclient import closing
+from scpclient import Read
+from scpclient import Write
 
 
 class Utils(object):
@@ -29,7 +27,7 @@ class Utils(object):
             exit()
 
     def rmt_copy(self, hostname, username='root', password='qum5net', get=False,
-                 send=False, fname=None, remote_path=None, local_path=None):
+                 send=False, fname=None, remote_path=None):
         """Remote copy function retrieves files from specified host.
 
         :param hostname: host name or ip address
@@ -105,22 +103,18 @@ class Utils(object):
         w.close()
         r.close()
 
-    def gen_file(self, filename, value, nfs_export=False):
+    def gen_file(self, filename, value):
 
         """gen_file will create a new file according to the input provided.
 
         :param filename: output name for the configuration file to be written.
         :param value: is a list of data to be written to the given config file.
-        :param nfs_export: flag which determines to format output for /etc/exports
         """
         try:
             fh = open(filename, 'w')
         except IOError as e:
             print "Couldn't create {0}: {1}".format(filename, e.strerror)
             print e.message
-
-        if nfs_export:
-            value[1:3] = [''.join(value[1:3])]
 
         for i in value:
             fh.write('%s   ' % i)

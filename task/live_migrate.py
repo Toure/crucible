@@ -87,7 +87,7 @@ class Config(Base, Utils):
             print("Couldn't find packstack answer file: {}".format(answerfile))
             exit()
 
-        return 1
+        return True
 
     def firewall_setup(self):
         """Firewall setup will open necessary ports on all compute nodes to allow libvirtd, nfs_server to
@@ -107,7 +107,7 @@ class Config(Base, Utils):
                     continue
                 else:
                     raise EnvironmentError('The remote command failed {}'.format(ret[1]))
-        return 1
+        return True
 
     def libvirtd_setup(self):
         """ libvirtd setup will configure libvirtd to listen on the external network interface.
@@ -138,7 +138,7 @@ class Config(Base, Utils):
                 self.rmt_copy(host, username=self.ssh_uid, password=self.ssh_pass,
                               send=True, fname=_obj['filename'], remote_path=_obj['filepath'])
 
-        return 1
+        return True
 
     def nova_setup(self):
         """Nova setup will configure all necessary files for nova to enable live migration."""
@@ -149,6 +149,17 @@ class Config(Base, Utils):
             os.mkdir('/tmp/nova_conf')
             os.chdir('/tmp/nova_conf')
 
+        def nova_adjust(nova_config_list):
+
+            for conf in nova_config_list:
+                self.rmt_copy(self.nova_hosts_list[0], username=self.ssh_uid, password=self.ssh_pass,
+                              get=True, fname=conf['filename'], remote_path=conf['filepath'])
+                for name, value in nova_config_list:
+                    self.adj_val(name, value, o_file=conf['filename'], n_file=conf['filename'] + '.new')
+                    self.renamer()
+
+            return True
+
         _nova_conf = dict(self.nova_config_obj.items('nova_conf'))
 
         if self.rhel_ver >= 7:
@@ -156,14 +167,19 @@ class Config(Base, Utils):
             _nova_cert_service = dict(self.nova_config_obj.item('nova_cert_service'))
             _nova_compute_service = dict(self.nova_config_obj.item('nova_compute_service'))
             _nova_config_list = [_nova_conf, _nova_api_service, _nova_cert_service, _nova_compute_service]
+
+            nova_adjust(_nova_config_list)
+
         else:
             _nova_config_list = [_nova_conf]
+            nova_adjust(_nova_config_list)
 
-        for conf in _nova_config_list:
-            self.rmt_copy(self.nova_hosts_list[0], username=self.ssh_uid, password=self.ssh_pass,
-                          get=True, fname=conf['filename'], remote_path=conf['filepath'])
-        for name, value in _nova_conf:
-            self.adj_val(name, value, o_file='nova.conf', n_file='nova.conf.new')
+        for host in self.nova_hosts_list:
+            for conf in _nova_config_list:
+                self.rmt_copy(host, username=self.ssh_uid, password=self.ssh_pass,
+                              send=True, fname=conf['filename'], remote_path=conf['filepath'])
+
+        return True
 
     def nfs_server_setup(self):
         """ NFS_Server setup will create an export file and copy this file to the nfs server, it will also
@@ -180,24 +196,24 @@ class Config(Base, Utils):
         _nfs_export_attribute = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['attribute']
         _nfs_export_net = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['network']
         _nfs_server_ip = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['nfs_server']
-        _nfs_export_filename = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['filename']
+        _nfs_export_obj = dict(self.share_storage_config_obj, 'nfs_export')
 
         if self.rhel_ver >= 7:
-            _nfs_idmapd_filename = self.config_gettr(self.share_storage_config_obj, 'nfs_idmapd')['filename']
+            _nfs_idmapd_obj = dict(self.share_storage_config_obj, 'nfs_idmapd')
             _nfs_idmapd_domain = self.config_gettr(self.share_storage_config_obj, 'nfs_idmapd')['domain']
-            self.rmt_copy(_nfs_server_ip, get=True, remote_path=_nfs_idmapd_filename)
-            idmapd_filename = _nfs_idmapd_filename.split('/')
-
-            self.adj_val('Domain', _nfs_idmapd_domain, idmapd_filename[-1], idmapd_filename[-1]+'.new')
-            self.renamer('/tmp/nfs_conf')
+            self.rmt_copy(_nfs_server_ip, get=True, fname=_nfs_idmapd_obj['filename'],
+                          remote_path=_nfs_idmapd_obj['filepath'])
+            self.adj_val('Domain', _nfs_idmapd_domain, _nfs_idmapd_obj['filename'],
+                         _nfs_idmapd_obj['filename'] + '.new')
+            self.renamer()
             self.rmt_copy(_nfs_server_ip, username=self.ssh_uid, password=self.ssh_pass,
-                          send=True, fname=idmapd_filename[-1], remote_path=_nfs_idmapd_filename)
+                          send=True, fname=_nfs_idmapd_obj['filename'], remote_path=_nfs_idmapd_obj['filepath'])
 
-        nfs_exports_info = [_nfs_export, _nfs_export_net, _nfs_export_attribute]
-        export_fn = self.gen_file('exports', nfs_exports_info)
+        nfs_exports_info = [_nfs_export, _nfs_export_net + _nfs_export_attribute]
+        export_fn = self.gen_file(_nfs_export_obj['filename'], nfs_exports_info)
 
         self.rmt_copy(_nfs_server_ip, username=self.ssh_uid, password=self.ssh_pass,
-                      send=True, fname=export_fn, remote_path=_nfs_export_filename)
+                      send=True, fname=export_fn, remote_path=_nfs_export_obj['filepath'])
 
     def nfs_client_setup(self):
         """NFS client function will append mount option for live migration to the compute nodes fstab file.
@@ -219,14 +235,14 @@ class Config(Base, Utils):
         fstab_entry = [_nfs_server, _nfs_mount_pt, _nfs_fstype, _mnt_opts, _fsck_opt]
         fstab_entry = "    ".join(fstab_entry)
 
-        system_util = '/usr/bin/echo'
+        system_util = '/usr/bin/echo '
 
-        system_util_operator = '>>'
+        system_util_operator = ' >> '
 
         cmd = [system_util, fstab_entry, system_util_operator, _fstab_filename]
         rmt_cmd = " ".join(cmd)
 
         for host in self.nova_hosts_list:
-            self.rmt_exec(host, username=self.ssh_uid, password=self.ssh_pass)
+            self.rmt_exec(host, rmt_cmd, username=self.ssh_uid, password=self.ssh_pass)
 
-        return 1
+        return True
