@@ -2,7 +2,6 @@ __author__ = 'toure'
 
 
 import platform
-import os
 from paramiko import SSHClient
 from paramiko import AutoAddPolicy
 from scpclient import closing
@@ -26,7 +25,7 @@ class Utils(object):
             print('This is an unsupported distribution version: %s' % distro_name)
             exit()
 
-    def rmt_copy(self, hostname, username='root', password='qum5net', get=False,
+    def rmt_copy(self, hostname, username=None, password=None, get=False,
                  send=False, fname=None, remote_path=None):
         """Remote copy function retrieves files from specified host.
 
@@ -42,9 +41,11 @@ class Utils(object):
         """
         if send is get:
             raise ValueError('Please set the direction for file copy.')
+
         ssh = SSHClient()
         ssh.set_missing_host_key_policy(AutoAddPolicy())
         ssh.connect(hostname, username=username, password=password)
+
         if get:
             with closing(Read(ssh.get_transport(), remote_path)) as scp:
                 scp.receive_file(fname)
@@ -52,7 +53,7 @@ class Utils(object):
             with closing(Write(ssh.get_transport(), remote_path)) as scp:
                 scp.send_file(fname, send)
 
-    def rmt_exec(self, hostname, cmd, username='root', password='qum5net'):
+    def rmt_exec(self, hostname, cmd, username=None, password=None):
         """Remote execution function to run defined commands.
 
         :param hostname: server hostname in which to run command.
@@ -72,36 +73,56 @@ class Utils(object):
 
         return ssh_stdoutput, ssh_stderror
 
-    def adj_val(self, token, value, o_file, n_file):
+    def adj_val(self, token, value, o_file, b_file):
         """Change the value of the token in a given config file.
 
         :param token: key within the config file
         :param value: value for token
         :param o_file: current configuration file which to read data.
-        :param n_file: new configuration file which to write out data.
+        :param b_file: backup configuration file which to write out original data
+                        before changing the original file.
         """
-        r = open(o_file, 'r')
-        w = open(n_file, 'w')
-        lines = r.readlines()
-        for line in lines:
-            if token in line:
-                if '=' in line:
-                    delimiter = '='
-                elif ':' in line:
-                    delimiter = ':'
+        org_file = open(o_file, 'r')
+        backup_file = open(b_file, 'w')
+
+        #Write a backup before changing the original.
+        lines = org_file.readlines()
+        try:
+            for line in lines:
+                backup_file.write(line)
+            backup_file.close()
+            org_file.close()
+        except IOError:
+            raise "Could not create requested file: {}".format(b_file)
+
+        try:
+            new_file = open(o_file, 'w')  # here is where we overwrite the
+                                          # original file after creating a backup.
+            backup_file = open(b_file, 'r')
+            new_lines = backup_file.readlines()
+            for line in new_lines:
+                if token in line:
+                    if '=' in line:
+                        delimiter = '='
+                    elif ':' in line:
+                        delimiter = ':'
+                    else:
+                        continue
                 else:
+                    new_file.write(line)
                     continue
-            else:
-                w.write(line)
-                continue
-            line = line.split(delimiter)
-            if token in line[0]:
-                if line[0].startswith('#'):
-                    line[0] = line[0].replace('#', '')
-                line[1] = value
-            w.write('='.join(line[0:2]))
-        w.close()
-        r.close()
+                line = line.split(delimiter)
+                if token in line[0]:
+                    if line[0].startswith('#'):
+                        line[0] = line[0].replace('#', '')
+                    line[1] = value
+                new_file.write('='.join(line[0:2]))
+            new_file.close()
+            backup_file.close()
+        except IOError:
+            print("Could complete requested file modification on: "
+                  "{0} and {1}".format(backup_file, new_file))
+            exit()
 
     def gen_file(self, filename, value):
 
@@ -120,31 +141,11 @@ class Utils(object):
             fh.write('%s   ' % i)
 
         try:
-            if fh.close():
-                return filename
+            fh.close()
+            return filename
         except IOError as ie:
             print "Couldn't close {0} do to: {1}".format(filename, ie.strerror)
-            raise ie
-
-    def renamer(self, file_path='.'):
-
-        """rename is a function responsible for taking the original configuration files and swapping them
-        with the newly altered configuration file.
-
-        :param file_path: directory path in which to find files. default: to present working directory.
-        """
-        file_ext = {'conf': '.conf.org', 'conf.new': '.conf', 'txt': '.txt.org',
-                    'txt.new': '.txt', '': '_org', 'new': ''}
-        for _file in os.listdir(file_path):
-            for ext in file_ext.items():
-                if _file.endswith(ext[0]):
-                    _file_new = _file.split('.')
-                    try:
-                        os.chdir(file_path)
-                        os.rename(_file, _file_new[0] + file_ext[ext[0]])
-                    except IOError as ie:
-                        print ie.message
-        return 1
+            print ie.message
 
 
 

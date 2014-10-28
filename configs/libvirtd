@@ -9,5 +9,6 @@ auth_tcp: none
 auth_tls: none
 
 [libvirtd_sysconfig]
-filename: /etc/sysconfig/libvirtd
+filename: libvirtd
+filepath: /etc/sysconfig
 LIBVIRTD_ARGS: --listen

@@ -6,7 +6,7 @@ import os
 import ConfigParser
 from configs.configs import get_path
 from subprocess import call
-
+from threading import RLock
 
 class Base(object):
     """
@@ -19,6 +19,7 @@ class Base(object):
         self.share_storage_config_obj = None
         self.system_info_obj = None
         self.nova_hosts_value = None
+        self.rlock = RLock()
 
     def make_config_obj(self, cfgname, path):
         """
@@ -77,8 +78,7 @@ class Config(Base, Utils):
         if os.path.exists(answerfile) and os.stat(answerfile)[6] != 0:
             #check to see if the file exist and its not empty.
             try:
-                self.adj_val('CONFIG_COMPUTE_HOSTS', self.nova_hosts_value, answerfile, answerfile + '.new')
-                self.renamer(os.path.dirname(answerfile))
+                self.adj_val('CONFIG_COMPUTE_HOSTS', self.nova_hosts_value, answerfile, answerfile + '.bak')
             except IOError:
                 raise IOError("Couldn't rename {}".format(answerfile))
 
@@ -102,11 +102,12 @@ class Config(Base, Utils):
         for host in self.nova_hosts_list:
             for ports in [nfs_tcp, nfs_udp, libvirtd_tcp]:
                 cmd = "iptables -A INPUT -m multiport -p tcp --dport {0:s} -j ACCEPT".format(ports)
-                ret = self.rmt_exec(host, cmd, username=self.ssh_uid, password=self.ssh_pass)
+                ret = self.rmt_exec(str(host), cmd, username=self.ssh_uid, password=self.ssh_pass)
                 if len(ret[1]) == 0:
                     continue
                 else:
                     raise EnvironmentError('The remote command failed {}'.format(ret[1]))
+
         return True
 
     def libvirtd_setup(self):
@@ -117,8 +118,8 @@ class Config(Base, Utils):
         if os.path.isdir('/tmp/libvirtd_conf'):
             os.chdir('/tmp/libvirtd_conf')
         else:
-            os.mkdir('/tmp/libvirt_conf')
-            os.chdir('/tmp/libvirt_conf')
+            os.mkdir('/tmp/libvirtd_conf')
+            os.chdir('/tmp/libvirtd_conf')
 
         _libvirtd_conf = dict(self.libvirtd_config_obj.items('libvirtd_conf'))
         _libvirtd_sysconf = dict(self.libvirtd_config_obj.items('libvirtd_sysconfig'))
@@ -128,10 +129,8 @@ class Config(Base, Utils):
                           get=True, fname=_dict_obj['filename'], remote_path=_dict_obj['filepath'])
 
         for name, value in _libvirtd_conf.items():
-            self.adj_val(name, value, 'libvirtd.conf', 'libvirtd.conf.new')
-        self.adj_val('LIBVIRTD_ARGS', 'listen', 'libvirtd', 'libvirtd.new')
-
-        self.renamer()
+            self.adj_val(name, value, 'libvirtd.conf', 'libvirtd.conf.bak')
+        self.adj_val('LIBVIRTD_ARGS', '--listen', 'libvirtd', 'libvirtd.bak')
 
         for host in self.nova_hosts_list:
             for _obj in [_libvirtd_conf, _libvirtd_sysconf]:
@@ -151,21 +150,20 @@ class Config(Base, Utils):
 
         def nova_adjust(nova_config_list):
 
-            for conf in nova_config_list:
+            for _conf in nova_config_list:
                 self.rmt_copy(self.nova_hosts_list[0], username=self.ssh_uid, password=self.ssh_pass,
-                              get=True, fname=conf['filename'], remote_path=conf['filepath'])
-                for name, value in nova_config_list:
-                    self.adj_val(name, value, o_file=conf['filename'], n_file=conf['filename'] + '.new')
-                    self.renamer()
+                              get=True, fname=_conf['filename'], remote_path=_conf['filepath'])
+                for name, value in _conf.items():
+                    self.adj_val(name, value, _conf['filename'], _conf['filename'] + '.bak')
 
             return True
 
         _nova_conf = dict(self.nova_config_obj.items('nova_conf'))
 
         if self.rhel_ver >= 7:
-            _nova_api_service = dict(self.nova_config_obj.item('nova_api_service'))
-            _nova_cert_service = dict(self.nova_config_obj.item('nova_cert_service'))
-            _nova_compute_service = dict(self.nova_config_obj.item('nova_compute_service'))
+            _nova_api_service = dict(self.nova_config_obj.items('nova_api_service'))
+            _nova_cert_service = dict(self.nova_config_obj.items('nova_cert_service'))
+            _nova_compute_service = dict(self.nova_config_obj.items('nova_compute_service'))
             _nova_config_list = [_nova_conf, _nova_api_service, _nova_cert_service, _nova_compute_service]
 
             nova_adjust(_nova_config_list)
@@ -196,24 +194,24 @@ class Config(Base, Utils):
         _nfs_export_attribute = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['attribute']
         _nfs_export_net = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['network']
         _nfs_server_ip = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['nfs_server']
-        _nfs_export_obj = dict(self.share_storage_config_obj, 'nfs_export')
+        _nfs_export_obj = dict(self.share_storage_config_obj.items('nfs_export'))
 
         if self.rhel_ver >= 7:
-            _nfs_idmapd_obj = dict(self.share_storage_config_obj, 'nfs_idmapd')
+            _nfs_idmapd_obj = dict(self.share_storage_config_obj.items('nfs_idmapd'))
             _nfs_idmapd_domain = self.config_gettr(self.share_storage_config_obj, 'nfs_idmapd')['domain']
             self.rmt_copy(_nfs_server_ip, get=True, fname=_nfs_idmapd_obj['filename'],
                           remote_path=_nfs_idmapd_obj['filepath'])
             self.adj_val('Domain', _nfs_idmapd_domain, _nfs_idmapd_obj['filename'],
-                         _nfs_idmapd_obj['filename'] + '.new')
-            self.renamer()
+                         _nfs_idmapd_obj['filename'] + '.bak')
             self.rmt_copy(_nfs_server_ip, username=self.ssh_uid, password=self.ssh_pass,
                           send=True, fname=_nfs_idmapd_obj['filename'], remote_path=_nfs_idmapd_obj['filepath'])
 
         nfs_exports_info = [_nfs_export, _nfs_export_net + _nfs_export_attribute]
         export_fn = self.gen_file(_nfs_export_obj['filename'], nfs_exports_info)
-
         self.rmt_copy(_nfs_server_ip, username=self.ssh_uid, password=self.ssh_pass,
                       send=True, fname=export_fn, remote_path=_nfs_export_obj['filepath'])
+
+        return True
 
     def nfs_client_setup(self):
         """NFS client function will append mount option for live migration to the compute nodes fstab file.
@@ -243,6 +241,10 @@ class Config(Base, Utils):
         rmt_cmd = " ".join(cmd)
 
         for host in self.nova_hosts_list:
-            self.rmt_exec(host, rmt_cmd, username=self.ssh_uid, password=self.ssh_pass)
+            ret = self.rmt_exec(str(host), rmt_cmd, username=self.ssh_uid, password=self.ssh_pass)
+            if len(ret[1]) == 0:
+                continue
+            else:
+                raise EnvironmentError('The remote command failed {}'.format(ret[1]))
 
         return True

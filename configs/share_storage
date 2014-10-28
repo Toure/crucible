@@ -1,7 +1,7 @@
 [nfs_export]
 filename: exports
 filepath: /etc
-nfs_server: <ip>
+nfs_server: 10.13.57.115
 export: /var/lib/nova
 attribute: (rw,fsid=0,insecure,no_subtree_check,async,no_root_squash)
 network: *
