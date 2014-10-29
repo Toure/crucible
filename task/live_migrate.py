@@ -108,6 +108,8 @@ class Config(Base, Utils):
                 else:
                     raise EnvironmentError('The remote command failed {}'.format(ret[1]))
 
+            ipsave_cmd = "service iptables save"
+            self.rmt_exec(str(host), ipsave_cmd, username=self.ssh_uid, password=self.ssh_pass)
         return True
 
     def libvirtd_setup(self):
@@ -136,6 +138,8 @@ class Config(Base, Utils):
             for _obj in [_libvirtd_conf, _libvirtd_sysconf]:
                 self.rmt_copy(host, username=self.ssh_uid, password=self.ssh_pass,
                               send=True, fname=_obj['filename'], remote_path=_obj['filepath'])
+
+            self.rmt_exec(host, "systemctl enable libvirtd.service", username=self.ssh_uid, password=self.ssh_pass)
 
         return True
 

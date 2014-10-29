@@ -3,10 +3,10 @@ filename: libvirtd.conf
 filepath: /etc/libvirt
 listen_tls: 0
 listen_tcp: 1
-auth_unix_ro: none
-auth_unix_rw: none
-auth_tcp: none
-auth_tls: none
+auth_unix_ro: "none"
+auth_unix_rw: "none"
+auth_tcp: "none"
+auth_tls: "none"
 
 [libvirtd_sysconfig]
 filename: libvirtd

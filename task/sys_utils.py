@@ -2,6 +2,8 @@ __author__ = 'toure'
 
 
 import platform
+import os
+import re
 from paramiko import SSHClient
 from paramiko import AutoAddPolicy
 from scpclient import closing
@@ -73,6 +75,22 @@ class Utils(object):
 
         return ssh_stdoutput, ssh_stderror
 
+    @staticmethod
+    def make_backup_file(orig_f, backup_f, o_file):
+        try:
+            pristine_name = o_file + ".orig"
+            if not os.path.exists(pristine_name):
+                pristine_f = open(pristine_name, "w")
+                pristine_f.write(orig_f.read())
+                pristine_f.close()
+                orig_f.seek(0, 0)
+
+            backup_f.write(orig_f.read())
+            backup_f.close()
+            orig_f.close()
+        except IOError:
+            raise "Could not create requested file: {}".format(b_file)
+
     def adj_val(self, token, value, o_file, b_file):
         """Change the value of the token in a given config file.
 
@@ -82,46 +100,42 @@ class Utils(object):
         :param b_file: backup configuration file which to write out original data
                         before changing the original file.
         """
-        org_file = open(o_file, 'r')
-        backup_file = open(b_file, 'w')
 
         #Write a backup before changing the original.
-        lines = org_file.readlines()
-        try:
-            for line in lines:
-                backup_file.write(line)
-            backup_file.close()
-            org_file.close()
-        except IOError:
-            raise "Could not create requested file: {}".format(b_file)
+        org_file = open(o_file, 'r')
+        backup_file = open(b_file, 'w')
+        self.make_backup_file(org_file, backup_file, o_file)
 
         try:
             new_file = open(o_file, 'w')  # here is where we overwrite the
                                           # original file after creating a backup.
             backup_file = open(b_file, 'r')
             new_lines = backup_file.readlines()
+
+            # This is a regex to read a line, and see if we have a match.  If it
+            # matches, match.groups() will return 4 capturing groups: a comment
+            #
+            patt = re.compile(r"(#\s*)*(\w+)\s*([=:])\s*(.*)")
+
+            found = []
             for line in new_lines:
-                if token in line:
-                    if '=' in line:
-                        delimiter = '='
-                    elif ':' in line:
-                        delimiter = ':'
-                    else:
-                        continue
-                else:
-                    new_file.write(line)
-                    continue
-                line = line.split(delimiter)
-                if token in line[0]:
-                    if line[0].startswith('#'):
-                        line[0] = line[0].replace('#', '')
-                    line[1] = value
-                new_file.write('='.join(line[0:2]))
+                m = patt.search(line)
+                if m:
+                    comment, key, delimiter, val = m.groups()
+                    # If we've already found the token, skip it
+                    if token in found:
+                        pass
+                    if token in key:
+                        line = " ".join([key, delimiter, value]) + "\n"
+                        found.append(key)
+                new_file.write(line)
+                new_file.flush()
+
             new_file.close()
             backup_file.close()
         except IOError:
             print("Could complete requested file modification on: "
-                  "{0} and {1}".format(backup_file, new_file))
+                  "{0} and {1}".format(o_file, b_file))
             exit()
 
     def gen_file(self, filename, value):
@@ -146,6 +160,4 @@ class Utils(object):
         except IOError as ie:
             print "Couldn't close {0} do to: {1}".format(filename, ie.strerror)
             print ie.message
-
-
 
