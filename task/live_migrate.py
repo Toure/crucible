@@ -148,6 +148,7 @@ class Config(Base, Utils):
             os.mkdir('/tmp/nova_conf')
             os.chdir('/tmp/nova_conf')
 
+
         def nova_adjust(nova_config_list):
 
             for _conf in nova_config_list:
@@ -159,6 +160,7 @@ class Config(Base, Utils):
             return True
 
         _nova_conf = dict(self.nova_config_obj.items('nova_conf'))
+        cmd = "mkdir {0}".format(_nova_conf['state_path'])
 
         if self.rhel_ver >= 7:
             _nova_api_service = dict(self.nova_config_obj.items('nova_api_service'))
@@ -176,6 +178,7 @@ class Config(Base, Utils):
             for conf in _nova_config_list:
                 self.rmt_copy(host, username=self.ssh_uid, password=self.ssh_pass,
                               send=True, fname=conf['filename'], remote_path=conf['filepath'])
+            self.rmt_exec(host, cmd, username=self.ssh_uid, password=self.ssh_pass)
 
         return True
 
