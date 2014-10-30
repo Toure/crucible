@@ -3,8 +3,6 @@
 __author__ = 'Toure Dunnon'
 
 from task.live_migrate import Config
-# import logging
-#import argparse
 
 
 
@@ -12,7 +10,7 @@ config = Config()
 
 LIVE_Migrate = [
     config.system_setup,
-    config.firewall_setup,
+    #config.firewall_setup,
     config.libvirtd_setup,
     config.nova_setup,
     config.nfs_server_setup,

@@ -4,12 +4,17 @@ __author__ = 'toure'
 import platform
 import os
 import re
+import logging
 from paramiko import SSHClient
 from paramiko import AutoAddPolicy
 from scpclient import closing
 from scpclient import Read
 from scpclient import Write
 
+from task.utils.logger import glob_logger as LOGGER
+from task.utils.logger import banner
+
+TRACE = logging.INFO
 
 class Utils(object):
 
@@ -73,12 +78,16 @@ class Utils(object):
         ssh_stdoutput = ssh_stdout.readlines()
         ssh_stderror = ssh_stderr.readlines()
 
+        LOGGER.debug("Issued cmd: {}".format(cmd))
+        LOGGER.debug("stdout: {}".format("".join(ssh_stdoutput)))
+        LOGGER.debug("stderr: {}".format("".join(ssh_stderror)))
+
         return ssh_stdoutput, ssh_stderror
 
     @staticmethod
     def make_backup_file(orig_f, backup_f, o_file):
+        pristine_name = o_file + ".orig"
         try:
-            pristine_name = o_file + ".orig"
             if not os.path.exists(pristine_name):
                 pristine_f = open(pristine_name, "w")
                 pristine_f.write(orig_f.read())
@@ -89,7 +98,7 @@ class Utils(object):
             backup_f.close()
             orig_f.close()
         except IOError:
-            raise "Could not create requested file: {}".format(b_file)
+            raise "Could not create requested file: {}".format(orig_f)
 
     def adj_val(self, token, value, o_file, b_file):
         """Change the value of the token in a given config file.
@@ -102,6 +111,7 @@ class Utils(object):
         """
 
         #Write a backup before changing the original.
+        LOGGER.log(TRACE, "Setting {} to {} in file {}".format(token, value, o_file))
         org_file = open(o_file, 'r')
         backup_file = open(b_file, 'w')
         self.make_backup_file(org_file, backup_file, o_file)
@@ -124,9 +134,11 @@ class Utils(object):
                     comment, key, delimiter, val = m.groups()
                     # If we've already found the token, skip it
                     if token in found:
-                        pass
-                    if token in key:
+                        if comment is None:
+                            continue   # don't write out the line, since we already wrote it out
+                    elif token in key:
                         line = " ".join([key, delimiter, value]) + "\n"
+                        LOGGER.log(TRACE, "Matched {} to {}, writing out {}".format(token, key, line))
                         found.append(key)
                 new_file.write(line)
                 new_file.flush()

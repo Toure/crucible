@@ -8,11 +8,15 @@ from configs.configs import get_path
 from subprocess import call
 from threading import RLock
 
+from task.utils.logger import glob_logger as LOGGER
+from task.utils.logger import banner
+
+
 class Base(object):
     """
     Base class for system configuration
     """
-    def __init__(self):
+    def __init__(self, logger=LOGGER):
         self.firewall_config_obj = None
         self.libvirtd_config_obj = None
         self.nova_config_obj = None
@@ -20,6 +24,7 @@ class Base(object):
         self.system_info_obj = None
         self.nova_hosts_value = None
         self.rlock = RLock()
+        self.logger = logger
 
     def make_config_obj(self, cfgname, path):
         """
@@ -31,6 +36,7 @@ class Base(object):
         try:
             setattr(self, cfgname, ConfigParser.ConfigParser())
             obj = getattr(self, cfgname)
+            obj.optionxform = str
             obj.read(path)
             return obj
         except AttributeError:
@@ -55,8 +61,8 @@ class Base(object):
 
 
 class Config(Base, Utils):
-    def __init__(self):
-        super(Config, self).__init__()
+    def __init__(self, logger=LOGGER):
+        super(Config, self).__init__(logger=logger)
         self.rhel_ver = self.system_version()
         self.ssh_creds_obj = self.make_config_obj('ssh_creds', get_path('system_info'))
         self.system_info_obj = self.make_config_obj('sys_info', get_path('system_info'))
@@ -72,19 +78,26 @@ class Config(Base, Utils):
     def system_setup(self):
         """System setup will determine RHEL version and configure the correct services per release info.
         """
+        banner(self.logger, ["Checking to see if Packstack will be run..."])
+        to_install = self.config_gettr(self.system_info_obj, 'install')['install']
+        if 'n' in to_install:
+            return True
+
         answerfile = self.config_gettr(self.system_info_obj, 'packstack')['filename']
         call(['packstack', '--gen-answer-file', answerfile])
 
         if os.path.exists(answerfile) and os.stat(answerfile)[6] != 0:
             #check to see if the file exist and its not empty.
+            self.logger.debug("Creating backup file for answerfile")
             try:
                 self.adj_val('CONFIG_COMPUTE_HOSTS', self.nova_hosts_value, answerfile, answerfile + '.bak')
             except IOError:
                 raise IOError("Couldn't rename {}".format(answerfile))
 
+            banner(self.logger, ["Running packstack installer, using {} file".format(answerfile)])
             call(['packstack', '--answer-file', answerfile])
         else:
-            print("Couldn't find packstack answer file: {}".format(answerfile))
+            self.logger.error("Couldn't find packstack answer file: {}".format(answerfile))
             exit()
 
         return True
@@ -99,10 +112,13 @@ class Config(Base, Utils):
         nfs_udp = self.config_gettr(self.firewall_config_obj, 'nfs rules')['udp_ports']
         libvirtd_tcp = self.config_gettr(self.firewall_config_obj, 'libvirtd rules')['tcp_ports']
 
+        self.logger.info("=" * 20)
+        self.logger.info("Setting up firewall rules")
         for host in self.nova_hosts_list:
-            for ports in [nfs_tcp, nfs_udp, libvirtd_tcp]:
-                cmd = "iptables -A INPUT -m multiport -p tcp --dport {0:s} -j ACCEPT".format(ports)
+            for proto, ports in [("tcp", nfs_tcp), ("udp", nfs_udp), ("tcp", libvirtd_tcp)]:
+                cmd = "iptables -A INPUT -m multiport -p {0} --dport {1:s} -j ACCEPT".format(proto, ports)
                 ret = self.rmt_exec(str(host), cmd, username=self.ssh_uid, password=self.ssh_pass)
+                self.logger.info("Issued: {}, ret={}".format(cmd, ret))
                 if len(ret[1]) == 0:
                     continue
                 else:
@@ -110,6 +126,7 @@ class Config(Base, Utils):
 
             ipsave_cmd = "service iptables save"
             self.rmt_exec(str(host), ipsave_cmd, username=self.ssh_uid, password=self.ssh_pass)
+        self.logger.info("+" * 20)
         return True
 
     def libvirtd_setup(self):
@@ -125,6 +142,8 @@ class Config(Base, Utils):
 
         _libvirtd_conf = dict(self.libvirtd_config_obj.items('libvirtd_conf'))
         _libvirtd_sysconf = dict(self.libvirtd_config_obj.items('libvirtd_sysconfig'))
+        banner(self.logger, ["_libvirtd_conf: {}".format(_libvirtd_conf),
+                             "_libvirtd_sysconf: {}".format(_libvirtd_sysconf)])
 
         for _dict_obj in [_libvirtd_conf, _libvirtd_sysconf]:
             self.rmt_copy(self.nova_hosts_list[0], username=self.ssh_uid, password=self.ssh_pass,
@@ -154,8 +173,8 @@ class Config(Base, Utils):
 
 
         def nova_adjust(nova_config_list):
-
             for _conf in nova_config_list:
+                self.logger.info("Copying {} to {}".format(_conf['filename'], _conf['filepath']))
                 self.rmt_copy(self.nova_hosts_list[0], username=self.ssh_uid, password=self.ssh_pass,
                               get=True, fname=_conf['filename'], remote_path=_conf['filepath'])
                 for name, value in _conf.items():
@@ -167,6 +186,7 @@ class Config(Base, Utils):
         cmd = "mkdir {0}".format(_nova_conf['state_path'])
 
         if self.rhel_ver >= 7:
+            self.logger.info("Doing nova setup for RHEL 7")
             _nova_api_service = dict(self.nova_config_obj.items('nova_api_service'))
             _nova_cert_service = dict(self.nova_config_obj.items('nova_cert_service'))
             _nova_compute_service = dict(self.nova_config_obj.items('nova_compute_service'))
@@ -175,6 +195,7 @@ class Config(Base, Utils):
             nova_adjust(_nova_config_list)
 
         else:
+            self.logger.info("Doing nova setup for RHEL 6")
             _nova_config_list = [_nova_conf]
             nova_adjust(_nova_config_list)
 
@@ -202,6 +223,8 @@ class Config(Base, Utils):
         _nfs_export_net = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['network']
         _nfs_server_ip = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['nfs_server']
         _nfs_export_obj = dict(self.share_storage_config_obj.items('nfs_export'))
+
+        banner(self.logger, ["Doing NFS server setup"])
 
         if self.rhel_ver >= 7:
             _nfs_idmapd_obj = dict(self.share_storage_config_obj.items('nfs_idmapd'))
