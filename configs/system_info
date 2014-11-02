@@ -18,7 +18,7 @@ cinder_install: y
 [nova]
 nova_install: y
 #config_nova_compute_hosts key will take a list ei: 192.168.0.10, 172.16.1.10
-nova_compute_hosts:10.8.30.226,10.8.29.63
+nova_compute_hosts:10.8.30.205,10.8.30.215
 
 [neutron]
 neutron_install: y
@@ -51,7 +51,7 @@ setsebool: nfs_export_all_rw
 
 [fstab]
 filename: /etc/fstab
-nfs_server: 10.8.30.226:/
+nfs_server: 10.8.30.205:/
 nfs_client_mount: /openstack
 fstype: nfs4
 attribute: defaults,context="system_u:object_r:nova_var_lib_t:s0"

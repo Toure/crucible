@@ -12,9 +12,9 @@ from scpclient import Read
 from scpclient import Write
 
 from task.utils.logger import glob_logger as LOGGER
-from task.utils.logger import banner
 
 TRACE = logging.INFO
+
 
 class Utils(object):
 
@@ -32,31 +32,26 @@ class Utils(object):
             print('This is an unsupported distribution version: %s' % distro_name)
             exit()
 
-    def rmt_copy(self, hostname, username=None, password=None, get=False,
-                 send=False, fname=None, remote_path=None):
+    def rmt_copy(self, hostname, username=None, password=None, send=False,
+                 fname=None, remote_path=None):
         """Remote copy function retrieves files from specified host.
 
         :param hostname: host name or ip address
         :param username: user which will have privalege to copy files to and from system.
         :param password: password for defined user.
-        :param get: flag to receive files
-        :type  get: bool
-        :param send: flag to send files
+        :param send: flag to send files. by default copy from remote (send=false)
         :type  send: bool
         :param fname: file name which to transport
         :param remote_path: where to place the file on the other end.
         """
-        if send is get:
-            raise ValueError('Please set the direction for file copy.')
-
         ssh = SSHClient()
         ssh.set_missing_host_key_policy(AutoAddPolicy())
         ssh.connect(hostname, username=username, password=password)
 
-        if get:
+        if not send:
             with closing(Read(ssh.get_transport(), remote_path)) as scp:
                 scp.receive_file(fname)
-        elif send:
+        else:
             with closing(Write(ssh.get_transport(), remote_path)) as scp:
                 scp.send_file(fname, send)
 
@@ -78,9 +73,9 @@ class Utils(object):
         ssh_stdoutput = ssh_stdout.readlines()
         ssh_stderror = ssh_stderr.readlines()
 
-        LOGGER.debug("Issued cmd: {}".format(cmd))
-        LOGGER.debug("stdout: {}".format("".join(ssh_stdoutput)))
-        LOGGER.debug("stderr: {}".format("".join(ssh_stderror)))
+        LOGGER.debug("Issued cmd: {0}".format(cmd))
+        LOGGER.debug("stdout: {0}".format("".join(ssh_stdoutput)))
+        LOGGER.debug("stderr: {0}".format("".join(ssh_stderror)))
 
         return ssh_stdoutput, ssh_stderror
 
@@ -94,11 +89,12 @@ class Utils(object):
                 pristine_f.close()
                 orig_f.seek(0, 0)
 
-            backup_f.write(orig_f.read())
+            txt = orig_f.read()
+            backup_f.write(txt)
             backup_f.close()
             orig_f.close()
         except IOError:
-            raise "Could not create requested file: {}".format(orig_f)
+            raise "Could not create requested file: {0}".format(orig_f)
 
     def adj_val(self, token, value, o_file, b_file):
         """Change the value of the token in a given config file.
@@ -111,7 +107,8 @@ class Utils(object):
         """
 
         #Write a backup before changing the original.
-        LOGGER.log(TRACE, "Setting {} to {} in file {}".format(token, value, o_file))
+        di = os.getcwd()
+        LOGGER.log(TRACE, "Trying to set {0} to {1} in file {2}".format(token, value, o_file))
         org_file = open(o_file, 'r')
         backup_file = open(b_file, 'w')
         self.make_backup_file(org_file, backup_file, o_file)
@@ -124,7 +121,7 @@ class Utils(object):
 
             # This is a regex to read a line, and see if we have a match.  If it
             # matches, match.groups() will return 4 capturing groups: a comment
-            #
+            # key, delimiter, and value
             patt = re.compile(r"(#\s*)*(\w+)\s*([=:])\s*(.*)")
 
             found = []
@@ -133,12 +130,13 @@ class Utils(object):
                 if m:
                     comment, key, delimiter, val = m.groups()
                     # If we've already found the token, skip it
-                    if token in found:
+                    if key in found:
+                        LOGGER.log(TRACE, "Already found {0} in {1}".format(token, line))
                         if comment is None:
                             continue   # don't write out the line, since we already wrote it out
                     elif token in key:
                         line = " ".join([key, delimiter, value]) + "\n"
-                        LOGGER.log(TRACE, "Matched {} to {}, writing out {}".format(token, key, line))
+                        LOGGER.log(TRACE, "Matched {0} to {1}, writing out {2}".format(token, key, line))
                         found.append(key)
                 new_file.write(line)
                 new_file.flush()

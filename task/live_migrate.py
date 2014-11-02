@@ -92,12 +92,12 @@ class Config(Base, Utils):
             try:
                 self.adj_val('CONFIG_COMPUTE_HOSTS', self.nova_hosts_value, answerfile, answerfile + '.bak')
             except IOError:
-                raise IOError("Couldn't rename {}".format(answerfile))
+                raise IOError("Couldn't rename {0}".format(answerfile))
 
-            banner(self.logger, ["Running packstack installer, using {} file".format(answerfile)])
+            banner(self.logger, ["Running packstack installer, using {0} file".format(answerfile)])
             call(['packstack', '--answer-file', answerfile])
         else:
-            self.logger.error("Couldn't find packstack answer file: {}".format(answerfile))
+            self.logger.error("Couldn't find packstack answer file: {0}".format(answerfile))
             exit()
 
         return True
@@ -118,11 +118,11 @@ class Config(Base, Utils):
             for proto, ports in [("tcp", nfs_tcp), ("udp", nfs_udp), ("tcp", libvirtd_tcp)]:
                 cmd = "iptables -A INPUT -m multiport -p {0} --dport {1:s} -j ACCEPT".format(proto, ports)
                 ret = self.rmt_exec(str(host), cmd, username=self.ssh_uid, password=self.ssh_pass)
-                self.logger.info("Issued: {}, ret={}".format(cmd, ret))
+                self.logger.info("Issued: {0}, ret={1}".format(cmd, ret))
                 if len(ret[1]) == 0:
                     continue
                 else:
-                    raise EnvironmentError('The remote command failed {}'.format(ret[1]))
+                    raise EnvironmentError('The remote command failed {0}'.format(ret[1]))
 
             ipsave_cmd = "service iptables save"
             self.rmt_exec(str(host), ipsave_cmd, username=self.ssh_uid, password=self.ssh_pass)
@@ -142,12 +142,12 @@ class Config(Base, Utils):
 
         _libvirtd_conf = dict(self.libvirtd_config_obj.items('libvirtd_conf'))
         _libvirtd_sysconf = dict(self.libvirtd_config_obj.items('libvirtd_sysconfig'))
-        banner(self.logger, ["_libvirtd_conf: {}".format(_libvirtd_conf),
-                             "_libvirtd_sysconf: {}".format(_libvirtd_sysconf)])
+        banner(self.logger, ["_libvirtd_conf: {0}".format(_libvirtd_conf),
+                             "_libvirtd_sysconf: {0}".format(_libvirtd_sysconf)])
 
         for _dict_obj in [_libvirtd_conf, _libvirtd_sysconf]:
             self.rmt_copy(self.nova_hosts_list[0], username=self.ssh_uid, password=self.ssh_pass,
-                          get=True, fname=_dict_obj['filename'], remote_path=_dict_obj['filepath'])
+                          fname=_dict_obj['filename'], remote_path=_dict_obj['filepath'])
 
         for name, value in _libvirtd_conf.items():
             self.adj_val(name, value, 'libvirtd.conf', 'libvirtd.conf.bak')
@@ -171,12 +171,13 @@ class Config(Base, Utils):
             os.mkdir('/tmp/nova_conf')
             os.chdir('/tmp/nova_conf')
 
+        banner(self.logger, ["Doing nova.conf configuration"])
 
         def nova_adjust(nova_config_list):
             for _conf in nova_config_list:
-                self.logger.info("Copying {} to {}".format(_conf['filename'], _conf['filepath']))
+                self.logger.info("Copying {0} to {1}".format(_conf['filename'], _conf['filepath']))
                 self.rmt_copy(self.nova_hosts_list[0], username=self.ssh_uid, password=self.ssh_pass,
-                              get=True, fname=_conf['filename'], remote_path=_conf['filepath'])
+                              fname=_conf['filename'], remote_path=_conf['filepath'])
                 for name, value in _conf.items():
                     self.adj_val(name, value, _conf['filename'], _conf['filename'] + '.bak')
 
@@ -253,6 +254,7 @@ class Config(Base, Utils):
             os.mkdir('/tmp/nfs_conf')
             os.chdir('/tmp/nfs_conf')
 
+        banner(self.logger, ["Doing NFS client setup"])
         _fstab_filename = self.config_gettr(self.system_info_obj, 'fstab')['filename']
         _nfs_server = self.config_gettr(self.system_info_obj, 'fstab')['nfs_server']
         _nfs_mount_pt = self.config_gettr(self.system_info_obj, 'fstab')['nfs_client_mount']
@@ -275,6 +277,6 @@ class Config(Base, Utils):
             if len(ret[1]) == 0:
                 continue
             else:
-                raise EnvironmentError('The remote command failed {}'.format(ret[1]))
+                raise EnvironmentError('The remote command failed {0}'.format(ret[1]))
 
         return True
