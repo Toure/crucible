@@ -1,12 +1,14 @@
 [nfs_export]
-filename: /etc/exports
-nfs_server: <ip>
+filename: exports
+filepath: /etc
+nfs_server: 10.8.30.226
 export: /var/lib/nova
 attribute: (rw,fsid=0,insecure,no_subtree_check,async,no_root_squash)
 network: *
 
 [nfs_idmapd]
-filename: /etc/idmapd.conf
+filename: idmapd.conf
+filepath: /etc
 domain: lab.eng.rdu2.redhat.com
 
 [iscsi_tgd]
