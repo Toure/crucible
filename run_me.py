@@ -14,7 +14,8 @@ LIVE_Migrate = [
     config.libvirtd_setup,
     config.nova_setup,
     config.nfs_server_setup,
-    config.nfs_client_setup
+    config.nfs_client_setup,
+    config.finalize_services
 ]
 
 #parser = argparse.ArgumentParser(description='Live Migration Setup Util.')
