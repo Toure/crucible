@@ -96,14 +96,18 @@ class Utils(object):
         except IOError:
             raise "Could not create requested file: {0}".format(orig_f)
 
-    def adj_val(self, token, value, o_file, b_file):
+    def adj_val(self, token, value, o_file, b_file, not_found="ignore", delimiter="="):
         """Change the value of the token in a given config file.
 
         :param token: key within the config file
         :param value: value for token
         :param o_file: current configuration file which to read data.
         :param b_file: backup configuration file which to write out original data
-                        before changing the original file.
+            before changing the original file.
+        :param not_found: can be one of 'ignore', 'append', or 'fail'.  If ignore, if no match is found by the end
+            of the file, ignore just doesn't write, append will append at the end of the file, and fail will throw
+            an exception
+        :param delimiter: the delimiter to separate the key value pair ('=' by default)
         """
 
         #Write a backup before changing the original.
@@ -125,6 +129,7 @@ class Utils(object):
             patt = re.compile(r"(#\s*)*(\w+)\s*([=:])\s*(.*)")
 
             found = []
+            matched = False
             for line in new_lines:
                 m = patt.search(line)
                 if m:
@@ -135,11 +140,17 @@ class Utils(object):
                         if comment is None:
                             continue   # don't write out the line, since we already wrote it out
                     elif token in key:
-                        line = " ".join([key, delimiter, value]) + "\n"
+                        line = "".join([key, delimiter, value]) + "\n"
                         LOGGER.log(TRACE, "Matched {0} to {1}, writing out {2}".format(token, key, line))
                         found.append(key)
+                        matched = True
                 new_file.write(line)
-                new_file.flush()
+
+            if not matched:
+                if not_found == "fail":
+                    raise Exception("Could not find {0} in file {1}".format(token, o_file))
+                elif not_found == "append":
+                    new_file.write("{0}{1}{2}\n".format(token, delimiter, value))
 
             new_file.close()
             backup_file.close()

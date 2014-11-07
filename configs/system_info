@@ -18,7 +18,7 @@ cinder_install: y
 [nova]
 nova_install: y
 #config_nova_compute_hosts key will take a list ei: 192.168.0.10, 172.16.1.10
-nova_compute_hosts:10.8.30.226,10.8.29.95
+nova_compute_hosts:10.8.30.202,10.8.30.150
 
 [neutron]
 neutron_install: y
@@ -42,7 +42,7 @@ nagios_install: y
 provision_demo: n
 
 [ssh_creds]
-#make sure all systems have the same credentials.
+#make sure all systems have the same credentials. user should be root normally, and change the password
 username: root
 password: none
 
@@ -60,7 +60,7 @@ setsebool: nfs_export_all_rw
 # attribute: defaults,nfsvers=3,context="system_u:object_r:nova_var_lib_t:s0"
 #
 filename: /etc/fstab
-nfs_server: 10.8.30.226:/
+nfs_server: 10.8.30.202:/
 nfs_client_mount: /openstack
 fstype: nfs4
 attribute: defaults,context="system_u:object_r:nova_var_lib_t:s0"

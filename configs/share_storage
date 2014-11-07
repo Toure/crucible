@@ -1,7 +1,7 @@
 [nfs_export]
 filename: exports
 filepath: /etc
-nfs_server: 10.8.30.226
+nfs_server: 10.8.30.202
 export: /var/lib/nova
 attribute: (rw,fsid=0,insecure,no_subtree_check,async,no_root_squash)
 network: *
@@ -13,3 +13,13 @@ domain: lab.eng.rdu2.redhat.com
 
 [iscsi_tgd]
 #Feature to come later.
+
+[nfs_ports]
+filename: nfs
+filepath: /etc/sysconfig
+LOCKD_TCPPORT: 32803
+LOCKD_UDPPORT:32769
+MOUNTD_PORT: 892
+RQUOTAD_PORT: 875
+STATD_PORT: 662
+STATD_OUTGOING_PORT: 2020

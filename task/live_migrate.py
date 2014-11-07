@@ -9,6 +9,7 @@ from subprocess import call
 from threading import RLock
 from functools import partial
 import re
+import shutil
 
 from task.utils.logger import glob_logger as LOGGER
 from task.utils.logger import banner
@@ -120,36 +121,37 @@ class Config(Base, Utils):
                                      username=self.ssh_uid, password=self.ssh_pass)
 
             patt = re.compile(r"(\d+)\s+(\w+)")
-            for i, lineout in enumerate(out):
+            for i, lineout in enumerate(out, -1):
                 m = patt.search(lineout)
                 if not m:
                     continue
                 line, chain = m.groups()
-                self.logger.info("line = {0}, chain = {1}, i={2}").format(line, chain, i)
+                self.logger.info("line = {0}, chain = {1}, i={2}".format(line, chain, i))
                 if chain == "REJECT":
                     break
             else:
-                line = i + 1
+                line = i
 
             self.logger.info("Final line = {0}".format(line))
             return line
 
 
+        host = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['nfs_server']
         self.logger.info("=" * 20)
-        self.logger.info("Setting up firewall rules")
-        for host in self.nova_hosts_list:
-            line = int(get_line(host))
-            for proto, ports in [("tcp", nfs_tcp), ("udp", nfs_udp), ("tcp", libvirtd_tcp)]:
-                for port in ports.split(','):
-                    cmd = "iptables -I INPUT {0} -m state --state NEW -m {1} -p {1}" \
-                          " --dport {2:s} -j ACCEPT".format(line, proto, port)
-                    line += 1
-                    ret = self.rmt_exec(str(host), cmd, username=self.ssh_uid, password=self.ssh_pass)
-                    self.logger.info("Issued: {0}, ret={1}".format(cmd, ret))
-                    if len(ret[1]) == 0:
-                        continue
-                    else:
-                        raise EnvironmentError('The remote command failed {0}'.format(ret[1]))
+        self.logger.info("Setting up firewall rules on {0}".format(host))
+
+        line = int(get_line(host))
+        for proto, ports in [("tcp", nfs_tcp), ("udp", nfs_udp), ("tcp", libvirtd_tcp)]:
+            for port in ports.split(','):
+                cmd = "iptables -I INPUT {0} -m state --state NEW -m {1} -p {1}" \
+                      " --dport {2:s} -j ACCEPT".format(line, proto, port)
+                line += 1
+                ret = self.rmt_exec(str(host), cmd, username=self.ssh_uid, password=self.ssh_pass)
+                self.logger.info("Issued: {0}, ret={1}".format(cmd, ret))
+                if len(ret[1]) == 0:
+                    continue
+                else:
+                    raise EnvironmentError('The remote command failed {0}'.format(ret[1]))
 
             ipsave_cmd = "service iptables save"
             self.rmt_exec(str(host), ipsave_cmd, username=self.ssh_uid, password=self.ssh_pass)
@@ -252,7 +254,22 @@ class Config(Base, Utils):
         _nfs_server_ip = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['nfs_server']
         _nfs_export_obj = dict(self.share_storage_config_obj.items('nfs_export'))
 
+        vals = dict(self.config_gettr(self.share_storage_config_obj, 'nfs_ports'))
+        fname, fpath = map(vals.pop, ("filename", "filepath"))  # pop them so we dont iterate on them later
+
         banner(self.logger, ["Doing NFS server setup"])
+
+        # Copy the originals to our local machine.  we will use this for editing
+        self.rmt_copy(_nfs_server_ip, fname=fname, remote_path=fpath, username=self.ssh_uid, password=self.ssh_pass)
+        shutil.copyfile(fname, fname + ".bak")
+
+        # Edit the files based on the values from share_storage config file
+        for k, v in vals.items():
+            self.adj_val(k, v, fname, fname + ".bak", not_found="append")
+
+        # Send the modified files back to the original host
+        self.rmt_copy(_nfs_server_ip, username=self.ssh_uid, password=self.ssh_pass, send=True, fname=fname,
+                      remote_path=fpath)
 
         if self.rhel_ver >= 7:
             _nfs_idmapd_obj = dict(self.share_storage_config_obj.items('nfs_idmapd'))
@@ -313,7 +330,7 @@ class Config(Base, Utils):
         banner(self.logger, ["Finalizing services"])
 
         keys = ["nfs", "rpcbind", "setenforce"]
-        vals = self.config_gettr(self.system_info_obj, 'servirmtces')
+        vals = self.config_gettr(self.system_info_obj, 'services')
         _nfs, _rpcbind, _setenforce = map(lambda x: vals[x], keys)
 
         # do the command for nfs
@@ -324,12 +341,15 @@ class Config(Base, Utils):
             self.logger.info("Issuing {0} on host {1}".format(cmd, host))
             return self.rmt_exec(str(host), cmd, username=self.ssh_uid, password=self.ssh_pass)
 
+        _nfs_server_ip = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['nfs_server']
         for host in self.nova_hosts_list:
+            # NFS server
             srv_name = "nfs-server" if self.rhel_ver >= 7 else "nfs"
-            for i in _nfs.split(","):
-                set_service(host, srv_name, i)
-            for i in _rpcbind.split(","):
-                set_service(host, "rpcbind", i)
+            if host == _nfs_server_ip:
+                for i in _nfs.split(","):
+                    set_service(host, srv_name, i)
+                for i in _rpcbind.split(","):
+                    set_service(host, "rpcbind", i)
 
             # FIXME: this is a temporary workaround
             self.rmt_exec(str(host), "setenforce {0}".format(_setenforce), username=self.ssh_uid,
@@ -337,3 +357,11 @@ class Config(Base, Utils):
             self.logger.info("Calling setenforce {0}".format(_setenforce))
             out, _ = self.rmt_exec(str(host), "getenforce", username=self.ssh_uid, password=self.ssh_pass)
             self.logger.info("getenforce: {0}".format("".join(out)))
+
+        return True
+
+
+if __name__ == "__main__":
+    conf = Config()
+    conf.nfs_server_setup()
+    print "done"
