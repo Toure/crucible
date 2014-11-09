@@ -7,12 +7,42 @@ import ConfigParser
 from configs.configs import get_path
 from subprocess import call
 from threading import RLock
-from functools import partial
+import sys
 import re
 import shutil
+import platform
+from subprocess import Popen, PIPE
 
 from task.utils.logger import glob_logger as LOGGER
 from task.utils.logger import banner
+
+
+def get_args(args=None):
+    major, minor, micro = platform.python_version_tuple()
+    if minor == '6':
+        from optparse import OptionParser as Parser
+        parser = Parser(description='Live Migration Setup Util.  All of the command line options are optional, and'
+                                    'if none are used, then the files in the config folder will be used.  If any'
+                                    'options are given on the command line, they will override the config files, and'
+                                    'those settings will be used instead')
+        add_opt = parser.add_option
+        parse_args = lambda x: x.parse_args(args)[0]
+    else:
+        from argparse import ArgumentParser as Parser
+        parser = Parser(description='Live Migration Setup Util.')
+        add_opt = parser.add_argument
+        parse_args = lambda x: x.parse_args(args)
+
+    add_opt("--controller", help="IP address of the controller/compute 1 node")
+    add_opt("--compute2", help="IP address of the 2nd compute node")
+    add_opt("--gen-sys-info", help="generate a new system_info config")
+    add_opt("--gen-storage", help="Generate a new share_storage config file")
+    add_opt("--gen-only", help="Only generate the new config file(s) the quit", action="store_true", default=False)
+    add_opt("--no-packstack", help="Dont install packstack. (default is false)", action="store_true", default=False)
+    add_opt("--no-save", help="Dont write the overridden settings to config file", action="store_true", default=False)
+    add_opt("--password", help="Password for root on both nodes")
+    args = parse_args(parser)
+    return args
 
 
 class Base(object):
@@ -64,8 +94,14 @@ class Base(object):
 
 
 class Config(Base, Utils):
-    def __init__(self, logger=LOGGER):
+    def __init__(self, args=None, logger=LOGGER):
+        """
+
+        :param args: Result from argument parser
+        :param logger:
+        """
         super(Config, self).__init__(logger=logger)
+        self.args = get_args(args=args)
         self.rhel_ver = self.system_version()
         self.ssh_creds_obj = self.make_config_obj('ssh_creds', get_path('system_info'))
         self.system_info_obj = self.make_config_obj('sys_info', get_path('system_info'))
@@ -77,6 +113,83 @@ class Config(Base, Utils):
         self.share_storage_config_obj = self.make_config_obj('nfs_server', get_path('share_storage'))
         self.ssh_uid = self.config_gettr(self.ssh_creds_obj, 'ssh_creds')['username']
         self.ssh_pass = self.config_gettr(self.ssh_creds_obj, 'ssh_creds')['password']
+        self.nfs_server = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['nfs_server']
+        self.fstab_section = self.config_gettr(self.system_info_obj, "fstab")
+        self.nfs_ver = self.fstab_section["fstype"]
+        self.controller = self.nfs_server
+        temp = set(self.nova_hosts_list)
+        temp.remove(self.controller)
+        self.compute2 = temp.pop()
+
+        self.args_override()
+
+    def configure_nfs(self):
+        """
+        This ensures
+        :return:
+        """
+        if self.nfs_ver == "nfs":
+            self.system_info_obj.set("fstab", "nfs_server", self.nfs_server + ":/var/lib/nova")
+            self.system_info_obj.set("fstab", "fstype", self.nfs_ver)
+            attr = 'defaults,nfsvers=3,context="system_u:object_r:nova_var_lib_t:s0"'
+        else:
+            self.system_info_obj.set("fstab", "nfs_server", self.nfs_server + ":/")
+            self.system_info_obj.set("fstab", "fstype", self.nfs_ver)
+            attr = 'defaults,context="system_u:object_r:nova_var_lib_t:s0"'
+        self.system_info_obj.set("fstab", "attribute", attr)
+
+    def args_override(self):
+        if self.args is None:
+            return
+
+        # Determine if we will override installing packstack
+        if self.args.no_packstack:
+            self.system_info_obj.set("install", "install", "n")
+
+        if self.args.password is not None:
+            self.ssh_pass = self.args.password
+
+        # Edit any place in the config files where we need the value of the controller
+        if self.args.controller is not None:
+            self.controller = self.args.controller
+            self.nova_hosts_list[0] = self.args.controller
+            self.nfs_server = self.args.controller
+            self.nova_hosts_value = ",".join(self.nova_hosts_list)
+            self.system_info_obj.set("fstab", "nfs_server", self.nfs_server + ":/")
+            self.share_storage_config_obj.set("nfs_export", "nfs_server", self.nfs_server)
+
+        # Edit any place in the config files where we need the value of the 2nd compute node
+        if self.args.compute2 is not None:
+            self.compute2 = self.args.compute2
+            self.nova_hosts_list[1] = self.args.compute2
+            self.nova_hosts_value = ",".join(self.nova_hosts_list)
+
+        # Set the values in the config object
+        if self.args.compute2 is not None or self.args.controller is not None:
+            self.system_info_obj.set("nova", "nova_compute_hosts", self.nova_hosts_value)
+
+        # Set the nfs type appropriately for the distro
+        self.nfs_ver = "nfs4" if self.rhel_ver == 7 else "nfs"
+        self.configure_nfs()
+
+        def gen_file(arg_file, config_obj):
+            if arg_file is not None:
+                with open(arg_file, "w") as gen_file:
+                    config_obj.write(gen_file)
+
+        # Save the files
+        if not self.args.no_save:
+            gen_file(self.args.gen_sys_info, self.system_info_obj)
+            gen_file(self.args.gen_storage, self.share_storage_config_obj)
+
+        # It may be useful to only generate the config files so we can inspect them before running, and replace
+        # the built in config files
+        if self.args.gen_only:
+            if self.args.no_save:
+                self.logger.error("Can't have both --gen-only and --no-save at the same time")
+                sys.exit(1)
+            self.logger.info("Done generating config files....quitting")
+            sys.exit(0)
 
     def system_setup(self):
         """System setup will determine RHEL version and configure the correct services per release info.
@@ -115,7 +228,8 @@ class Config(Base, Utils):
         nfs_udp = self.config_gettr(self.firewall_config_obj, 'nfs rules')['udp_ports']
         libvirtd_tcp = self.config_gettr(self.firewall_config_obj, 'libvirtd rules')['tcp_ports']
 
-        # In iptables, find where the first REJECT rule is.  We need to insert at this line number
+        # In iptables, find where the first REJECT rule is.  We need to insert at this line number. If the
+        # REJECT rule doesn't exist, just start at the last line in the INPUT chain
         def get_line(host):
             out, err = self.rmt_exec(str(host), "iptables -L INPUT --line-numbers",
                                      username=self.ssh_uid, password=self.ssh_pass)
@@ -128,13 +242,16 @@ class Config(Base, Utils):
                 line, chain = m.groups()
                 self.logger.info("line = {0}, chain = {1}, i={2}".format(line, chain, i))
                 if chain == "REJECT":
+                    # this line needs to be deleted.
+                    out, err = self.rmt_exec(str(host), "iptables -D INPUT {0}".format(i), username=self.ssh_uid,
+                                             password=self.ssh_pass)
+                    line = i - 1
                     break
             else:
                 line = i
 
             self.logger.info("Final line = {0}".format(line))
             return line
-
 
         host = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['nfs_server']
         self.logger.info("=" * 20)
@@ -208,7 +325,7 @@ class Config(Base, Utils):
                 self.rmt_copy(self.nova_hosts_list[0], username=self.ssh_uid, password=self.ssh_pass,
                               fname=_conf['filename'], remote_path=_conf['filepath'])
                 for name, value in _conf.items():
-                    self.adj_val(name, value, _conf['filename'], _conf['filename'] + '.bak')
+                    self.adj_val(name, value, _conf['filename'], _conf['filename'] + '.bak', delim="=")
 
             return True
 
@@ -251,7 +368,6 @@ class Config(Base, Utils):
         _nfs_export = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['export']
         _nfs_export_attribute = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['attribute']
         _nfs_export_net = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['network']
-        _nfs_server_ip = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['nfs_server']
         _nfs_export_obj = dict(self.share_storage_config_obj.items('nfs_export'))
 
         vals = dict(self.config_gettr(self.share_storage_config_obj, 'nfs_ports'))
@@ -260,30 +376,30 @@ class Config(Base, Utils):
         banner(self.logger, ["Doing NFS server setup"])
 
         # Copy the originals to our local machine.  we will use this for editing
-        self.rmt_copy(_nfs_server_ip, fname=fname, remote_path=fpath, username=self.ssh_uid, password=self.ssh_pass)
+        self.rmt_copy(self.nfs_server, fname=fname, remote_path=fpath, username=self.ssh_uid, password=self.ssh_pass)
         shutil.copyfile(fname, fname + ".bak")
 
         # Edit the files based on the values from share_storage config file
         for k, v in vals.items():
-            self.adj_val(k, v, fname, fname + ".bak", not_found="append")
+            self.adj_val(k, v, fname, fname + ".bak", not_found="append", delim="=")
 
         # Send the modified files back to the original host
-        self.rmt_copy(_nfs_server_ip, username=self.ssh_uid, password=self.ssh_pass, send=True, fname=fname,
+        self.rmt_copy(self.nfs_server, username=self.ssh_uid, password=self.ssh_pass, send=True, fname=fname,
                       remote_path=fpath)
 
         if self.rhel_ver >= 7:
             _nfs_idmapd_obj = dict(self.share_storage_config_obj.items('nfs_idmapd'))
             _nfs_idmapd_domain = self.config_gettr(self.share_storage_config_obj, 'nfs_idmapd')['domain']
-            self.rmt_copy(_nfs_server_ip, fname=_nfs_idmapd_obj['filename'],
-                          remote_path=_nfs_idmapd_obj['filepath'])
+            self.rmt_copy(self.nfs_server, fname=_nfs_idmapd_obj['filename'], username=self.ssh_uid,
+                          password=self.ssh_pass, remote_path=_nfs_idmapd_obj['filepath'])
             self.adj_val('Domain', _nfs_idmapd_domain, _nfs_idmapd_obj['filename'],
                          _nfs_idmapd_obj['filename'] + '.bak')
-            self.rmt_copy(_nfs_server_ip, username=self.ssh_uid, password=self.ssh_pass,
+            self.rmt_copy(self.nfs_server, username=self.ssh_uid, password=self.ssh_pass,
                           send=True, fname=_nfs_idmapd_obj['filename'], remote_path=_nfs_idmapd_obj['filepath'])
 
         nfs_exports_info = [_nfs_export, _nfs_export_net + _nfs_export_attribute]
         export_fn = self.gen_file(_nfs_export_obj['filename'], nfs_exports_info)
-        self.rmt_copy(_nfs_server_ip, username=self.ssh_uid, password=self.ssh_pass,
+        self.rmt_copy(self.nfs_server, username=self.ssh_uid, password=self.ssh_pass,
                       send=True, fname=export_fn, remote_path=_nfs_export_obj['filepath'])
 
         return True
@@ -341,11 +457,10 @@ class Config(Base, Utils):
             self.logger.info("Issuing {0} on host {1}".format(cmd, host))
             return self.rmt_exec(str(host), cmd, username=self.ssh_uid, password=self.ssh_pass)
 
-        _nfs_server_ip = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['nfs_server']
         for host in self.nova_hosts_list:
             # NFS server
             srv_name = "nfs-server" if self.rhel_ver >= 7 else "nfs"
-            if host == _nfs_server_ip:
+            if host == self.nfs_server:
                 for i in _nfs.split(","):
                     set_service(host, srv_name, i)
                 for i in _rpcbind.split(","):
@@ -360,8 +475,55 @@ class Config(Base, Utils):
 
         return True
 
+    def configure_etc_hosts(self):
+        """Sets the /etc/hosts file on both the controller and compute2 nodes
 
-if __name__ == "__main__":
-    conf = Config()
-    conf.nfs_server_setup()
-    print "done"
+        It copies the /etc/hosts file locally, edits it, then copies the edited file back.  The function
+        will also run the hostname command remotely in order to get the hostname from the nodes.  It
+        compares this with the cdomain name from the nfs_idmapd section.  If there is a discrepancy or
+        it can't retrieve the hostname, it will raise an error
+
+        Returns a tuple of the short hostname and the full hostname
+        """
+        # Get the /etc/hosts file from the remote machine
+        getattr = lambda x: self.config_gettr(self.system_info_obj, "etc_hosts")[x]
+        fname, fpath = map(getattr, ["filename", "filepath"])
+
+        # Get the domain from the share_storage config file
+        domain = dict(self.config_gettr(self.share_storage_config_obj, "nfs_idmapd"))
+        domain_name = domain["domain"]
+
+        # Helper to retrieve the short and long names.
+        def get_host_names(host, domain):
+            out, err = self.rmt_exec(host, "hostname", username=self.ssh_uid, password=self.ssh_pass)
+            try:
+                hostname = out[0].strip()
+            except Exception as e:
+                self.logger.error("Unable to get the hostname from {0}".format(host))
+                raise e
+
+            ind = hostname.find(domain)
+            if ind == -1:
+                msg = "On host {0}, discrepancy between found domain name: {1}, " \
+                      "and domain in config file: {2}".format(host, hostname, domain)
+                self.logger.error(msg)
+                raise Exception(msg)
+
+            short = hostname[:ind]
+            if any(map(short.endswith, [".", "-", "_"])):
+                short = short[:-1]  # remove the .,- or _
+
+            return short, hostname
+
+        # Copy the originals to our local machine.  we will use this for editing
+        compute1_entry = "{0} {1}".format(*get_host_names(self.controller, domain_name))
+        compute2_entry = "{0} {1}".format(*get_host_names(self.compute2, domain_name))
+        entries = [(self.controller, compute1_entry), (self.compute2, compute2_entry)]
+        for host in self.nova_hosts_list:
+            self.rmt_copy(host, fname=fname, remote_path=fpath, username=self.ssh_uid, password=self.ssh_pass)
+            for h, v in entries:
+                self.adj_val(h, v, fname, fname + ".bak", not_found="append", delim=" ")
+            self.rmt_copy(host, username=self.ssh_uid, password=self.ssh_pass, send=True, fname=fname,
+                          remote_path=fpath)
+        return True
+

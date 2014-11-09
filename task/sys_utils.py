@@ -13,7 +13,7 @@ from scpclient import Write
 
 from task.utils.logger import glob_logger as LOGGER
 
-TRACE = logging.INFO
+TRACE = logging.DEBUG
 
 
 class Utils(object):
@@ -73,11 +73,14 @@ class Utils(object):
         ssh_stdoutput = ssh_stdout.readlines()
         ssh_stderror = ssh_stderr.readlines()
 
-        LOGGER.debug("Issued cmd: {0}".format(cmd))
-        LOGGER.debug("stdout: {0}".format("".join(ssh_stdoutput)))
-        LOGGER.debug("stderr: {0}".format("".join(ssh_stderror)))
-
-        return ssh_stdoutput, ssh_stderror
+        try:
+            LOGGER.debug("Issued cmd: {0}".format(cmd))
+            LOGGER.debug("stdout: {0}".format("".join(ssh_stdoutput)))
+            LOGGER.debug("stderr: {0}".format("".join(ssh_stderror)))
+        except:
+            pass
+        finally:
+            return ssh_stdoutput, ssh_stderror
 
     @staticmethod
     def make_backup_file(orig_f, backup_f, o_file):
@@ -96,7 +99,7 @@ class Utils(object):
         except IOError:
             raise "Could not create requested file: {0}".format(orig_f)
 
-    def adj_val(self, token, value, o_file, b_file, not_found="ignore", delimiter="="):
+    def adj_val(self, token, value, o_file, b_file, not_found="ignore", delim=None):
         """Change the value of the token in a given config file.
 
         :param token: key within the config file
@@ -107,7 +110,7 @@ class Utils(object):
         :param not_found: can be one of 'ignore', 'append', or 'fail'.  If ignore, if no match is found by the end
             of the file, ignore just doesn't write, append will append at the end of the file, and fail will throw
             an exception
-        :param delimiter: the delimiter to separate the key value pair ('=' by default)
+        :param delimiter: If specified, use delim as the delimiter instead of what is found from the regex.
         """
 
         #Write a backup before changing the original.
@@ -126,7 +129,8 @@ class Utils(object):
             # This is a regex to read a line, and see if we have a match.  If it
             # matches, match.groups() will return 4 capturing groups: a comment
             # key, delimiter, and value
-            patt = re.compile(r"(#\s*)*(\w+)\s*([=:])\s*(.*)")
+            s = r"(#\s*)*\s*({0})(\s*[=: ]\s*)(.*)".format(token)
+            patt = re.compile(s)
 
             found = []
             matched = False
@@ -134,13 +138,17 @@ class Utils(object):
                 m = patt.search(line)
                 if m:
                     comment, key, delimiter, val = m.groups()
+                    if delim == "strip":
+                        delimiter = delimiter.strip()
+                    else:
+                        delimiter = delim if delim is not None else delimiter
                     # If we've already found the token, skip it
                     if key in found:
                         LOGGER.log(TRACE, "Already found {0} in {1}".format(token, line))
                         if comment is None:
                             continue   # don't write out the line, since we already wrote it out
-                    elif token in key:
-                        line = "".join([key, delimiter, value]) + "\n"
+                    else:
+                        line = "{0}{1}{2}\n".format(token, delimiter, value)
                         LOGGER.log(TRACE, "Matched {0} to {1}, writing out {2}".format(token, key, line))
                         found.append(key)
                         matched = True
@@ -150,7 +158,9 @@ class Utils(object):
                 if not_found == "fail":
                     raise Exception("Could not find {0} in file {1}".format(token, o_file))
                 elif not_found == "append":
-                    new_file.write("{0}{1}{2}\n".format(token, delimiter, value))
+                    line = "{0}{1}{2}\n".format(token, delim, value)
+                    LOGGER.log(TRACE, "{0} was not found in {1}. Appending {2}".format(token, o_file, line))
+                    new_file.write(line)
 
             new_file.close()
             backup_file.close()

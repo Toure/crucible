@@ -4,7 +4,7 @@ filename: /tmp/rhos_live_migration.txt
 
 [install]
 # Whether to perform a packstack install or not
-install: n
+install: y
 
 [mysql]
 mysql_install: y
@@ -18,7 +18,7 @@ cinder_install: y
 [nova]
 nova_install: y
 #config_nova_compute_hosts key will take a list ei: 192.168.0.10, 172.16.1.10
-nova_compute_hosts:10.8.30.202,10.8.30.150
+nova_compute_hosts:10.8.30.141,10.8.30.200
 
 [neutron]
 neutron_install: y
@@ -60,7 +60,7 @@ setsebool: nfs_export_all_rw
 # attribute: defaults,nfsvers=3,context="system_u:object_r:nova_var_lib_t:s0"
 #
 filename: /etc/fstab
-nfs_server: 10.8.30.202:/
+nfs_server: 10.8.30.141:/
 nfs_client_mount: /openstack
 fstype: nfs4
 attribute: defaults,context="system_u:object_r:nova_var_lib_t:s0"
@@ -70,3 +70,7 @@ fsck: 0 0
 nfs: enable,restart
 rpcbind: enable,restart
 setenforce: 0
+
+[etc_hosts]
+filename: hosts
+filepath: /etc
