@@ -25,6 +25,7 @@ LIVE_Migrate = [
 
 successes = []
 for fn in LIVE_Migrate:
+    print "Running {0}".format(fn.__name__)
     ret = fn()
     successes.append(fn.__name__)
     if ret:
