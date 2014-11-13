@@ -1,4 +1,4 @@
-# RHOS-Transmigration
+# Crucible
 
 This utility is a post installation script for RHEL and Fedora deployment of OpenStack with LiveMigration.
 
@@ -18,7 +18,7 @@ This utility is a post installation script for RHEL and Fedora deployment of Ope
 
 # Overview
 
-RHOS-Transmigration serves 2 main purposes:
+Crucible serves 2 main purposes:
 
 - To install packstack with the appropriate settings to do a live migration
 - To set all the system configuration in order to perform live migration
@@ -42,25 +42,25 @@ properly
 
 # Usage
 
-First, you have to install RHOS-Transmigration to the controller node.  One can either git clone from the repository
+First, you have to install Crucible to the controller node.  One can either git clone from the repository
 
-     git clone https://github.com/Toure/RHOS-Transmigration.git
+     git clone https://github.com/Toure/crucible.git
 
 
 Or if you have it locally, you can scp -r it to the controller node.
 
-RHOS-Transmigration will read in config files from the config file directory in order to know how to setup the
+Crucible will read in config files from the config file directory in order to know how to setup the
 system.  These settings can be overridden on the command line, and one can even generate a new system_info or
 shared_storage file.  Most of the file does not need to be edited, and it might be easier for a newcomer to just
 use the command line
 
 ## Command line
 
-Once you are inside the RHOS-Transmigration folder, you will see a run_me.py script.  By running::
+Once you are inside the folder, you will see a run_me.py script.  By running::
 
     python run_me.py --help
 
-It will print out a help message.  In general, if this is your first time running RHOS-Transmigration, a good idea
+It will print out a help message.  In general, if this is your first time running Crucible, a good idea
 will be to do this::
 
     python run_me.py --controller=xxx.xxx.xxx.xxx --compute2=yyy.yyy.yyy.yyy --gen-only --gen-sys-info=sysinfo --gen-storage=storage
