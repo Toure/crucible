@@ -1,20 +1,22 @@
-from task.sys_utils import Utils
+from crucible.task.sys_utils import Utils
 
-__author__ = 'toure'
+__author__ = 'Toure Dunnon'
+__credits__ = ['Toure Dunnon', 'Sean Toner']
+__license__ = 'GPL'
+__version__ = '2.1.0'
 
 import os
 import ConfigParser
-from configs.configs import get_path
+from crucible.configs.configs import get_path
 from subprocess import call
 from threading import RLock
 import sys
 import re
 import shutil
 import platform
-from subprocess import Popen, PIPE
 
-from task.utils.logger import glob_logger as LOGGER
-from task.utils.logger import banner
+from crucible.task.utils.logger import glob_logger as LOGGER
+from crucible.task.utils.logger import banner
 
 
 def get_args(args=None):

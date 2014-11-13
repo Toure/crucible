@@ -11,6 +11,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
  * Lesser General Public License for more details.
  *
- * Contributors:Toure Dunnon <toure@redhat.com>
+ * Contributors:Toure Dunnon <toure@redhat.com>, Sean Toner <stoner@redhat.com>
  *     ...
  */

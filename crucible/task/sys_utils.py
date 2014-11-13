@@ -1,17 +1,20 @@
-__author__ = 'toure'
-
-
+__author__ = 'Toure Dunnon'
+__credits__ = ['Toure Dunnon', 'Sean Toner']
+__license__ = 'GPL'
+__version__ = '2.1.0'
 import platform
 import os
 import re
 import logging
+
 from paramiko import SSHClient
 from paramiko import AutoAddPolicy
+
 from scpclient import closing
 from scpclient import Read
 from scpclient import Write
+from crucible.task.utils.logger import glob_logger as LOGGER
 
-from task.utils.logger import glob_logger as LOGGER
 
 TRACE = logging.DEBUG
 

@@ -1,4 +1,6 @@
-import logging
+__author__ = 'Toure Dunnon, Sean Toner'
+__license__ = "GPL3"
+__version__ = "0.31"
 
 
 def get_stream_handler(log_level=None):

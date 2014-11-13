@@ -1,8 +1,10 @@
 #!/usr/bin/env python
-
 __author__ = 'Toure Dunnon'
+__credits__ = ['Toure Dunnon', 'Sean Toner']
+__license__ = 'GPL'
+__version__ = '2.1.0'
 
-from task.live_migrate import Config
+from crucible.task.live_migrate import Config
 
 # Because we have to be backwards compatible with python 2.6 (ugghhhhh), we'll import either
 # argparse or optparse.  We have to limit our usage of the parser object to optparse functionality
