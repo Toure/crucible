@@ -69,6 +69,7 @@ fsck: 0 0
 [services]
 nfs: enable,restart
 rpcbind: enable,restart
+libvirtd: enable, restart
 setenforce: 0
 
 [etc_hosts]

@@ -2,18 +2,22 @@
 
 __author__ = 'Toure Dunnon'
 
-from task.live_migrate import Config
+from crucible.task.live_migrate import Config
 
 # Because we have to be backwards compatible with python 2.6 (ugghhhhh), we'll import either
 # argparse or optparse.  We have to limit our usage of the parser object to optparse functionality
 # Note also that the command line options will override anything in the config files.  Therefore no
 # arguments are necessary, as the config files will use the defaults
+#
+# TODO: RHOS-Transmigration should be able to work from any laptop.  Right now, you could run this on
+# a machine other than the controller other than the controller or compute node, but the machine would
+# have to be identical
 
 config = Config()
 
 
 LIVE_Migrate = [
-    config.system_setup,
+    config.remote_setup,
     config.firewall_setup,
     config.libvirtd_setup,
     config.nova_setup,
