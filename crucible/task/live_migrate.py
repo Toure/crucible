@@ -578,9 +578,3 @@ class Config(Base, Utils):
             self.rmt_copy(host, username=self.ssh_uid, password=self.ssh_pass, send=True, fname=fname,
                           remote_path=fpath)
         return True
-
-if __name__ == "__main__":
-    args = ["--controller=10.8.30.181", "--compute2=10.8.30.20", "--password=redHAT2014"]
-    conf = Config(args=args)
-    conf.remote_setup(install=False)
-    print "done"

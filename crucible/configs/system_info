@@ -67,9 +67,9 @@ attribute: defaults,context="system_u:object_r:nova_var_lib_t:s0"
 fsck: 0 0
 
 [services]
-nfs: enable,restart
-rpcbind: enable,restart
-libvirtd: enable, restart
+nfs: enable,stop,start
+rpcbind: enable,stop,start
+libvirtd: enable,stop,start
 setenforce: 0
 
 [etc_hosts]
