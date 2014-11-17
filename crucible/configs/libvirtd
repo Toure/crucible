@@ -11,4 +11,4 @@ auth_tls: "none"
 [libvirtd_sysconfig]
 filename: libvirtd
 filepath: /etc/sysconfig
-LIBVIRTD_ARGS: --listen
+LIBVIRTD_ARGS: "--listen"

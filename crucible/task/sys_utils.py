@@ -2,7 +2,8 @@ __author__ = 'Toure Dunnon'
 __credits__ = ['Toure Dunnon', 'Sean Toner']
 __license__ = 'GPL'
 __version__ = '2.1.0'
-import platform
+
+import time
 import os
 import re
 import logging
@@ -13,27 +14,72 @@ from paramiko import AutoAddPolicy
 from scpclient import closing
 from scpclient import Read
 from scpclient import Write
-from crucible.task.utils.logger import glob_logger as LOGGER
+
+from crucible.utils.logger import glob_logger as LOGGER
+from crucible.helpers.decorators import require_local
+from crucible.task.commander import Command
 
 
 TRACE = logging.DEBUG
 
+version = 'python -c "from platform import linux_distribution\n\
+print linux_distribution()"'
+
+
+class OSInfo:
+    def __init__(self, flavor, version, name):
+        self.util = Utils()
+        self.flavor = flavor
+        self.version = version
+        self.name = name
+        self.family = None
+        self.nfs_ver = "nfs"
+        self.service_cmd = "systemctl {command} {name}"
+        self.service_enable = "systemctl {command} {name}"
+        self.determine_extra()
+
+    def determine_extra(self):
+        if "Red Hat" in self.flavor or "Centos" in self.flavor:
+            family = "Centos" if "Centos" in self.flavor else "RHEL"
+            if self.version >= 7.0:
+                self.nfs_ver = "nfs4"
+                self.family = family
+            elif self.version < 6.0:
+                raise Exception("This version of RHEL is not supported")
+            else:
+                self.family = family
+                self.service_cmd = "service {name} {command}"
+                self.service_enable = "chkconfig {name} {command}"
+        elif "Fedora" in self.flavor:
+            if self.version >= 18.0:
+                self.nfs_ver = "nfs4"
+                self.family = "Fedora"
+            else:
+                raise Exception("This version of Fedora is not supported")
+        else:
+            raise Exception("{} is not a supported linux distro".format(self.flavor))
+
+    def enable_service(self, srv_name):
+        cmd = "on" if self.nfs_ver == "nfs" else "enable"
+        return self.service_enable.format(name=srv_name, command=cmd)
+
+    def service_control(self, srv_name, command):
+        return self.service_cmd.format(name=srv_name, command=command)
+
 
 class Utils(object):
 
-    def system_version(self):
+    def system_version(self, host, user, pw, cmd=version):
         """
         :return: RHEL release version number.
         """
-        distro_name = platform.linux_distribution()
-        version = float(distro_name[1])
-        if version >= 7.0:
-            return 7
-        elif version <= 6.9:
-            return 6
-        else:
-            print('This is an unsupported distribution version: %s' % distro_name)
-            exit()
+        ssh_out, ssh_err = self.rmt_exec(host, cmd, username=user, password=pw)
+        lines = ssh_out.readlines()
+        out = lines[0].strip()
+        res = eval(out)
+        flavor, version, codename = res
+        version = float(version)
+        return OSInfo(flavor, version, codename)
 
     def rmt_copy(self, hostname, username=None, password=None, send=False,
                  fname=None, remote_path=None):
@@ -58,7 +104,7 @@ class Utils(object):
             with closing(Write(ssh.get_transport(), remote_path)) as scp:
                 scp.send_file(fname, send)
 
-    def rmt_exec(self, hostname, cmd, username=None, password=None):
+    def rmt_exec(self, hostname, cmd, username=None, password=None, valid=None, throws=True):
         """Remote execution function to run defined commands.
 
         :param hostname: server hostname in which to run command.
@@ -73,17 +119,16 @@ class Utils(object):
         ssh.connect(hostname, port=22, username=username, password=password)
         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command(cmd)
 
-        ssh_stdoutput = ssh_stdout.readlines()
-        ssh_stderror = ssh_stderr.readlines()
-
-        try:
-            LOGGER.debug("Issued cmd: {0}".format(cmd))
-            LOGGER.debug("stdout: {0}".format("".join(ssh_stdoutput)))
-            LOGGER.debug("stderr: {0}".format("".join(ssh_stderror)))
-        except:
-            pass
-        finally:
-            return ssh_stdoutput, ssh_stderror
+        time.sleep(.5)
+        ret = ssh_stdout.channel.recv_exit_status()
+        valid = [0] if valid is None else valid
+        if ret not in valid:
+            msg = "{} failed on host {} with returncode = {}".format(cmd, hostname, ret)
+            if throws:
+                raise Exception(msg)
+            else:
+                LOGGER.error(msg)
+        return ssh_stdout, ssh_stderr
 
     @staticmethod
     def make_backup_file(orig_f, backup_f, o_file):
@@ -132,7 +177,7 @@ class Utils(object):
             # This is a regex to read a line, and see if we have a match.  If it
             # matches, match.groups() will return 4 capturing groups: a comment
             # key, delimiter, and value
-            s = r"(#\s*)*\s*({0})(\s*[=: ]\s*)(.*)".format(token)
+            s = r"(#\s*)*\s*({0})(\s*[=:]\s*)(.*)".format(token)
             patt = re.compile(s)
 
             found = []
@@ -195,3 +240,23 @@ class Utils(object):
             print "Couldn't close {0} do to: {1}".format(filename, ie.strerror)
             print ie.message
 
+
+    @require_local("sshpass")
+    def copy_public_keys(self):
+        """
+        Copies the SSH key to the controller
+        :return:
+        """
+        # write a temp file
+        with open("pass.txt", "w") as pw:
+            pw.write(self.ssh_pass + "\n")
+        if not os.path.exists("pass.txt"):
+            raise OSError("Could not generate pass.txt file")
+
+        cmd = "sshpass -f pass.txt ssh-copy-id root@{}"
+        for host in self.nova_hosts_list:
+            cmd = cmd.format(host)
+            command = Command(cmd, logr=self.logger)
+            res = command(throws=True)
+
+        os.unlink("pass.txt")

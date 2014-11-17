@@ -15,8 +15,9 @@ import re
 import shutil
 import platform
 
-from crucible.task.utils.logger import glob_logger as LOGGER
-from crucible.task.utils.logger import banner
+
+from crucible.utils.logger import glob_logger as LOGGER
+from crucible.utils.logger import banner
 
 
 def get_args(args=None):
@@ -98,13 +99,14 @@ class Base(object):
 class Config(Base, Utils):
     def __init__(self, args=None, logger=LOGGER):
         """
+        FIXME: There's a lot of ugly version checking for RHEL 6 vs RHEL 7.  This should be an abstract base class
+        and depending on the version override the implementation
 
         :param args: Result from argument parser
         :param logger:
         """
         super(Config, self).__init__(logger=logger)
         self.args = get_args(args=args)
-        self.rhel_ver = self.system_version()
         self.ssh_creds_obj = self.make_config_obj('ssh_creds', get_path('system_info'))
         self.system_info_obj = self.make_config_obj('sys_info', get_path('system_info'))
         self.firewall_config_obj = self.make_config_obj('firewall', get_path('firewall'))
@@ -122,7 +124,7 @@ class Config(Base, Utils):
         temp = set(self.nova_hosts_list)
         temp.remove(self.controller)
         self.compute2 = temp.pop()
-
+        self.distro_type = None  # will get filled in by args_override()
         self.args_override()
 
     def configure_nfs(self):
@@ -133,10 +135,14 @@ class Config(Base, Utils):
         if self.nfs_ver == "nfs":
             self.system_info_obj.set("fstab", "nfs_server", self.nfs_server + ":/var/lib/nova")
             self.system_info_obj.set("fstab", "fstype", self.nfs_ver)
+            for x in ["nfs", "rpcbind", "libvirtd"]:
+                self.system_info_obj.set("services", x, "on,restart")
             attr = 'defaults,nfsvers=3,context="system_u:object_r:nova_var_lib_t:s0"'
         else:
             self.system_info_obj.set("fstab", "nfs_server", self.nfs_server + ":/")
             self.system_info_obj.set("fstab", "fstype", self.nfs_ver)
+            for x in ["nfs", "rpcbind", "libvirtd"]:
+                self.system_info_obj.set("services", x, "enable,restart")
             attr = 'defaults,context="system_u:object_r:nova_var_lib_t:s0"'
         self.system_info_obj.set("fstab", "attribute", attr)
 
@@ -171,7 +177,8 @@ class Config(Base, Utils):
             self.system_info_obj.set("nova", "nova_compute_hosts", self.nova_hosts_value)
 
         # Set the nfs type appropriately for the distro
-        self.nfs_ver = "nfs4" if self.rhel_ver == 7 else "nfs"
+        self.distro_type = self.system_version(self.controller, self.ssh_uid, self.ssh_pass)
+        self.nfs_ver = self.distro_type.nfs_ver
         self.configure_nfs()
 
         def gen_file(arg_file, config_obj):
@@ -220,9 +227,48 @@ class Config(Base, Utils):
 
         return True
 
+    def remote_setup(self, install=True):
+        banner(self.logger, ["Checking to see if Packstack will be run remotely..."])
+        to_install = self.config_gettr(self.system_info_obj, 'install')['install']
+        if 'n' in to_install:
+            return True
+
+        answer = self.config_gettr(self.system_info_obj, 'packstack')['filename']
+        answerfile = os.path.basename(answer)
+        answerpath = os.path.dirname(answer)
+
+        # FIXME: Figure out a way to tell if this command was successful
+        self.rmt_exec(self.controller, "packstack --gen-answer-file={}".format(answer), username=self.ssh_uid,
+                      password=self.ssh_pass)
+        self.rmt_copy(self.controller, username=self.ssh_uid, password=self.ssh_pass, fname=answerfile,
+                      remote_path=answerpath)
+
+        if os.path.exists(answerfile) and os.stat(answerfile)[6] != 0:
+            #check to see if the file exist and its not empty.
+            self.logger.debug("Creating backup file for answerfile")
+            try:
+                self.adj_val('CONFIG_COMPUTE_HOSTS', self.nova_hosts_value, answerfile, answerfile + '.bak')
+            except IOError:
+                raise IOError("Couldn't rename {0}".format(answerfile))
+
+            banner(self.logger, ["Running packstack installer, using {0} file".format(answerfile)])
+            self.rmt_copy(self.controller, username=self.ssh_uid, password=self.ssh_pass, fname=answerfile,
+                          remote_path=answerpath, send=True)
+            if install:
+                out, err = self.rmt_exec(self.controller, 'packstack --answer-file {0}'.format(answer),
+                                         username=self.ssh_uid, password=self.ssh_pass,
+                                         input=[self.ssh_pass + "\n", self.ssh_pass + "\n"])
+
+            return True
+        else:
+            self.logger.error("Couldn't find packstack answer file: {0}".format(answer))
+            exit()
+
     def firewall_setup(self):
         """Firewall setup will open necessary ports on all compute nodes to allow libvirtd, nfs_server to
         communicate with their clients.
+
+        FIXME: this function should be idempotent
 
         :return: upon success zero is returned if not an exception is raised.
         """
@@ -235,6 +281,7 @@ class Config(Base, Utils):
         def get_line(host):
             out, err = self.rmt_exec(str(host), "iptables -L INPUT --line-numbers",
                                      username=self.ssh_uid, password=self.ssh_pass)
+            out = out.readlines()
 
             patt = re.compile(r"(\d+)\s+(\w+)")
             for i, lineout in enumerate(out, -1):
@@ -255,7 +302,7 @@ class Config(Base, Utils):
             self.logger.info("Final line = {0}".format(line))
             return line
 
-        host = self.config_gettr(self.share_storage_config_obj, 'nfs_export')['nfs_server']
+        host = self.nfs_server
         self.logger.info("=" * 20)
         self.logger.info("Setting up firewall rules on {0}".format(host))
 
@@ -266,11 +313,12 @@ class Config(Base, Utils):
                       " --dport {2:s} -j ACCEPT".format(line, proto, port)
                 line += 1
                 ret = self.rmt_exec(str(host), cmd, username=self.ssh_uid, password=self.ssh_pass)
-                self.logger.info("Issued: {0}, ret={1}".format(cmd, ret))
-                if len(ret[1]) == 0:
+                errlines = ret[1].readlines()
+                self.logger.info("Issued: {0}".format(cmd))
+                if len(errlines) == 0:
                     continue
                 else:
-                    raise EnvironmentError('The remote command failed {0}'.format(ret[1]))
+                    raise EnvironmentError('The remote command failed {0}'.format(errlines))
 
             ipsave_cmd = "service iptables save"
             self.rmt_exec(str(host), ipsave_cmd, username=self.ssh_uid, password=self.ssh_pass)
@@ -297,16 +345,17 @@ class Config(Base, Utils):
             self.rmt_copy(self.nova_hosts_list[0], username=self.ssh_uid, password=self.ssh_pass,
                           fname=_dict_obj['filename'], remote_path=_dict_obj['filepath'])
 
+        # Edit the libvirtd
         for name, value in _libvirtd_conf.items():
             self.adj_val(name, value, 'libvirtd.conf', 'libvirtd.conf.bak')
-        self.adj_val('LIBVIRTD_ARGS', '--listen', 'libvirtd', 'libvirtd.bak')
+
+        for name, value in _libvirtd_sysconf.items():
+            self.adj_val(name, value, 'libvirtd', 'libvirtd.bak')
 
         for host in self.nova_hosts_list:
             for _obj in [_libvirtd_conf, _libvirtd_sysconf]:
                 self.rmt_copy(host, username=self.ssh_uid, password=self.ssh_pass,
                               send=True, fname=_obj['filename'], remote_path=_obj['filepath'])
-
-            self.rmt_exec(host, "systemctl enable libvirtd.service", username=self.ssh_uid, password=self.ssh_pass)
 
         return True
 
@@ -332,17 +381,16 @@ class Config(Base, Utils):
             return True
 
         _nova_conf = dict(self.nova_config_obj.items('nova_conf'))
-        cmd = "mkdir {0}".format(_nova_conf['state_path'])
+        cmd = "mkdir -p {0}".format(_nova_conf['state_path'])
 
-        if self.rhel_ver >= 7:
-            self.logger.info("Doing nova setup for RHEL 7")
+        if self.distro_type.family in ["RHEL", "Centos"] and self.distro_type.version >= 7:
+            self.logger.info("Doing nova setup for {} {}".format(self.distro_type.family, self.distro_type.version))
             _nova_api_service = dict(self.nova_config_obj.items('nova_api_service'))
             _nova_cert_service = dict(self.nova_config_obj.items('nova_cert_service'))
             _nova_compute_service = dict(self.nova_config_obj.items('nova_compute_service'))
             _nova_config_list = [_nova_conf, _nova_api_service, _nova_cert_service, _nova_compute_service]
 
             nova_adjust(_nova_config_list)
-
         else:
             self.logger.info("Doing nova setup for RHEL 6")
             _nova_config_list = [_nova_conf]
@@ -389,7 +437,7 @@ class Config(Base, Utils):
         self.rmt_copy(self.nfs_server, username=self.ssh_uid, password=self.ssh_pass, send=True, fname=fname,
                       remote_path=fpath)
 
-        if self.rhel_ver >= 7:
+        if self.distro_type.family in ["RHEL", "Centos"] and self.distro_type.version >= 7:
             _nfs_idmapd_obj = dict(self.share_storage_config_obj.items('nfs_idmapd'))
             _nfs_idmapd_domain = self.config_gettr(self.share_storage_config_obj, 'nfs_idmapd')['domain']
             self.rmt_copy(self.nfs_server, fname=_nfs_idmapd_obj['filename'], username=self.ssh_uid,
@@ -436,10 +484,10 @@ class Config(Base, Utils):
 
         for host in self.nova_hosts_list:
             ret = self.rmt_exec(str(host), rmt_cmd, username=self.ssh_uid, password=self.ssh_pass)
-            if len(ret[1]) == 0:
+            if ret[0].channel.recv_exit_status() == 0:
                 continue
             else:
-                raise EnvironmentError('The remote command failed {0}'.format(ret[1]))
+                raise EnvironmentError('The remote command failed {0}'.format(ret[1].readlines()))
 
         return True
 
@@ -447,26 +495,32 @@ class Config(Base, Utils):
         """Looks at the [services] section of system_info, and performs any necessary operations"""
         banner(self.logger, ["Finalizing services"])
 
-        keys = ["nfs", "rpcbind", "setenforce"]
-        vals = self.config_gettr(self.system_info_obj, 'services')
-        _nfs, _rpcbind, _setenforce = map(lambda x: vals[x], keys)
+        keys = ["nfs", "rpcbind", "libvirtd", "setenforce"]
+        vals = dict(self.system_info_obj.items('services'))
+        _nfs, _rpcbind, _libvirt, _setenforce = map(lambda x: vals[x], keys)
 
         # do the command for nfs
-        def set_service(host, service_name, val):
-            cmd = "{0} {1} {2}"
-            srv_cmd = ("systemctl", val, service_name) if self.rhel_ver >= 7 else ("service", service_name, val)
-            cmd = cmd.format(*srv_cmd)
+        def set_service(host, cmd, service_name, val):
+            srv_cmd = {"command": val, "name": service_name}
+            cmd = cmd.format(**srv_cmd)
             self.logger.info("Issuing {0} on host {1}".format(cmd, host))
             return self.rmt_exec(str(host), cmd, username=self.ssh_uid, password=self.ssh_pass)
 
+        # Ughh, this is ugly.  This should be made polymorphic
         for host in self.nova_hosts_list:
             # NFS server
-            srv_name = "nfs-server" if self.rhel_ver >= 7 else "nfs"
+            srv_name = "nfs-server" if self.distro_type.nfs_ver == "nfs4" else "nfs"
             if host == self.nfs_server:
-                for i in _nfs.split(","):
-                    set_service(host, srv_name, i)
                 for i in _rpcbind.split(","):
-                    set_service(host, "rpcbind", i)
+                    cmd = self.distro_type.service_enable if i in ["on", "enable"] else self.distro_type.service_cmd
+                    set_service(host, cmd, "rpcbind", i)
+                for i in _nfs.split(","):
+                    cmd = self.distro_type.service_enable if i in ["on", "enable"] else self.distro_type.service_cmd
+                    set_service(host, cmd, srv_name, i)
+
+            for i in _libvirt.split(","):
+                cmd = self.distro_type.service_enable if i in ["on", "enable"] else self.distro_type.service_cmd
+                set_service(host, cmd, "libvirtd", i)
 
             # FIXME: this is a temporary workaround
             self.rmt_exec(str(host), "setenforce {0}".format(_setenforce), username=self.ssh_uid,
@@ -488,7 +542,7 @@ class Config(Base, Utils):
         Returns a tuple of the short hostname and the full hostname
         """
         # Get the /etc/hosts file from the remote machine
-        getattr = lambda x: self.config_gettr(self.system_info_obj, "etc_hosts")[x]
+        getattr = lambda x: self.system_info_obj.get("etc_hosts", x)
         fname, fpath = map(getattr, ["filename", "filepath"])
 
         # Get the domain from the share_storage config file
@@ -497,9 +551,9 @@ class Config(Base, Utils):
 
         # Helper to retrieve the short and long names.
         def get_host_names(host, domain):
-            out, err = self.rmt_exec(host, "hostname", username=self.ssh_uid, password=self.ssh_pass)
+            out, _ = self.rmt_exec(host, "hostname", username=self.ssh_uid, password=self.ssh_pass)
             try:
-                hostname = out[0].strip()
+                hostname = out.readlines()[0].strip()
             except Exception as e:
                 self.logger.error("Unable to get the hostname from {0}".format(host))
                 raise e
@@ -528,4 +582,3 @@ class Config(Base, Utils):
             self.rmt_copy(host, username=self.ssh_uid, password=self.ssh_pass, send=True, fname=fname,
                           remote_path=fpath)
         return True
-
