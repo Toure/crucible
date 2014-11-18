@@ -256,8 +256,7 @@ class Config(Base, Utils):
                           remote_path=answerpath, send=True)
             if install:
                 out, err = self.rmt_exec(self.controller, 'packstack --answer-file {0}'.format(answer),
-                                         username=self.ssh_uid, password=self.ssh_pass,
-                                         input=[self.ssh_pass + "\n", self.ssh_pass + "\n"])
+                                         username=self.ssh_uid, password=self.ssh_pass)
 
             return True
         else:
