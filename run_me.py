@@ -19,7 +19,7 @@ config = Config()
 
 
 LIVE_Migrate = [
-    config.remote_setup,
+    config.system_setup,
     config.firewall_setup,
     config.libvirtd_setup,
     config.nova_setup,

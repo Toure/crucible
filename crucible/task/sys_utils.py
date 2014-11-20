@@ -16,8 +16,7 @@ from scpclient import Read
 from scpclient import Write
 
 from crucible.utils.logger import glob_logger as LOGGER
-from crucible.helpers.decorators import require_local
-from crucible.task.commander import Command
+from crucible.helpers.decorators import require_remote
 
 
 TRACE = logging.DEBUG
@@ -57,7 +56,7 @@ class OSInfo:
             else:
                 raise Exception("This version of Fedora is not supported")
         else:
-            raise Exception("{} is not a supported linux distro".format(self.flavor))
+            raise Exception("{0} is not a supported linux distro".format(self.flavor))
 
     def enable_service(self, srv_name):
         cmd = "on" if self.nfs_ver == "nfs" else "enable"
@@ -104,7 +103,7 @@ class Utils(object):
             with closing(Write(ssh.get_transport(), remote_path)) as scp:
                 scp.send_file(fname, send)
 
-    def rmt_exec(self, hostname, cmd, username=None, password=None, valid=None, throws=True):
+    def rmt_exec(self, hostname, cmd, username=None, password=None, check=False, valid=None, throws=True):
         """Remote execution function to run defined commands.
 
         :param hostname: server hostname in which to run command.
@@ -118,16 +117,17 @@ class Utils(object):
         ssh.set_missing_host_key_policy(AutoAddPolicy())
         ssh.connect(hostname, port=22, username=username, password=password)
         ssh_stdin, ssh_stdout, ssh_stderr = ssh.exec_command(cmd)
+        time.sleep(.25)
 
-        time.sleep(.5)
-        ret = ssh_stdout.channel.recv_exit_status()
-        valid = [0] if valid is None else valid
-        if ret not in valid:
-            msg = "{} failed on host {} with returncode = {}".format(cmd, hostname, ret)
-            if throws:
-                raise Exception(msg)
-            else:
-                LOGGER.error(msg)
+        if check:
+            ret = ssh_stdout.channel.recv_exit_status()
+            valid = [0] if valid is None else valid
+            if ret not in valid:
+                msg = "{0} failed on host {1} with returncode = {2}".format(cmd, hostname, ret)
+                if throws:
+                    raise Exception(msg)
+                else:
+                    LOGGER.error(msg)
         return ssh_stdout, ssh_stderr
 
     @staticmethod
@@ -240,23 +240,33 @@ class Utils(object):
             print "Couldn't close {0} do to: {1}".format(filename, ie.strerror)
             print ie.message
 
-
-    @require_local("sshpass")
-    def copy_public_keys(self):
+    @require_remote("sshpass")
+    def copy_public_keys(self, **kwargs):
         """
         Copies the SSH key to the controller
+        kwargs:
+          host: ip address of the machine we will copy the keys from
+          target: ip address of the machine we will copy keys to
+          username: user for the machine we are copying the keys to
+          password: pw of the user on the machine we are copying to
         :return:
         """
+        host, target, username, password = map(kwargs.get, ("host", "target", "username", "password"))
         # write a temp file
-        with open("pass.txt", "w") as pw:
-            pw.write(self.ssh_pass + "\n")
-        if not os.path.exists("pass.txt"):
-            raise OSError("Could not generate pass.txt file")
+        with open("/tmp/pass.txt", "w") as pwd:
+            pwd.write(password)
 
-        cmd = "sshpass -f pass.txt ssh-copy-id root@{}"
-        for host in self.nova_hosts_list:
-            cmd = cmd.format(host)
-            command = Command(cmd, logr=self.logger)
-            res = command(throws=True)
+        self.rmt_copy(target, username=username, password=password, send=True, fname="/tmp/pass.txt",
+                      remote_path="/tmp")
 
-        os.unlink("pass.txt")
+        copy_cmd = "sshpass -f /tmp/pass.txt ssh-copy-id -i -o StrictHostKeyChecking=no root@{0}".format(target)
+        out, err = self.rmt_exec(host, copy_cmd, username=username, password=password)
+
+        while not out.channel.exit_status_ready():
+            time.sleep(1)
+
+        # clean up the passwords
+        os.unlink("/tmp/pass.txt")
+        self.rmt_exec(host, "rm -f /tmp/pass.txt", username=username, password=password)
+
+        return out.channel.recv_exit_status()

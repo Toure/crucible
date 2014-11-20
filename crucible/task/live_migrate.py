@@ -127,6 +127,11 @@ class Config(Base, Utils):
         self.distro_type = None  # will get filled in by args_override()
         self.args_override()
 
+
+    def get_ip(self):
+        pass
+
+
     def configure_nfs(self):
         """
         This ensures
@@ -237,8 +242,15 @@ class Config(Base, Utils):
         answerfile = os.path.basename(answer)
         answerpath = os.path.dirname(answer)
 
+        for target in self.nova_hosts_list:
+            res = self.copy_public_keys(host=self.controller, target=target, username=self.ssh_uid,
+                                        password=self.ssh_pass)
+
+        owd = os.getcwd()
+        os.chdir("/tmp")  # When we copy, put it in /tmp
+
         # FIXME: Figure out a way to tell if this command was successful
-        self.rmt_exec(self.controller, "packstack --gen-answer-file={}".format(answer), username=self.ssh_uid,
+        self.rmt_exec(self.controller, "packstack --gen-answer-file={0}".format(answer), username=self.ssh_uid,
                       password=self.ssh_pass)
         self.rmt_copy(self.controller, username=self.ssh_uid, password=self.ssh_pass, fname=answerfile,
                       remote_path=answerpath)
@@ -255,8 +267,12 @@ class Config(Base, Utils):
             self.rmt_copy(self.controller, username=self.ssh_uid, password=self.ssh_pass, fname=answerfile,
                           remote_path=answerpath, send=True)
             if install:
-                out, err = self.rmt_exec(self.controller, 'packstack --answer-file {0}'.format(answer),
+                out, err = self.rmt_exec(self.controller, 'packstack --answer-file={0}'.format(answer),
                                          username=self.ssh_uid, password=self.ssh_pass)
+                for line in out.readlines():
+                    self.logger.info(line)
+
+            os.chdir(owd)
 
             return True
         else:
@@ -383,7 +399,7 @@ class Config(Base, Utils):
         cmd = "mkdir -p {0}".format(_nova_conf['state_path'])
 
         if self.distro_type.family in ["RHEL", "Centos"] and self.distro_type.version >= 7:
-            self.logger.info("Doing nova setup for {} {}".format(self.distro_type.family, self.distro_type.version))
+            self.logger.info("Doing nova setup for {0} {1}".format(self.distro_type.family, self.distro_type.version))
             _nova_api_service = dict(self.nova_config_obj.items('nova_api_service'))
             _nova_cert_service = dict(self.nova_config_obj.items('nova_cert_service'))
             _nova_compute_service = dict(self.nova_config_obj.items('nova_compute_service'))

@@ -7,6 +7,7 @@ Author: Sean Toner
 import logging
 import time
 import sys
+import os
 
 
 def make_timestamp():
@@ -17,14 +18,17 @@ def make_timestamp():
     return "-".join(str(x) for x in timevals)
 
 
-def make_timestamped_filename(prefix, postfix=".txt"):
+def make_timestamped_filename(prefix, dir="/tmp", postfix=".txt"):
     """
     Returns a string containing prefix-timestamp-postfix
     """
-    return "-".join([prefix, make_timestamp()]) + postfix
+    base = os.path.join(dir, prefix)
+    return "-".join([base, make_timestamp()]) + postfix
 
 
-def make_logger(loggername, handlers= [], loglevel=logging.DEBUG):
+def make_logger(loggername, handlers=None, loglevel=logging.DEBUG):
+    if handlers is None:
+        handlers = []
     logr = logging.getLogger(loggername)
     logr.setLevel(loglevel)
 
@@ -72,7 +76,7 @@ def get_simple_logger(logname, filename, loglvl=logging.DEBUG):
     sh = make_stream_handler(stream_fmt)
 
     ## Make the filename, file handler and formatter
-    fname = make_timestamped_filename(filename, ".log")
+    fname = make_timestamped_filename(filename, postfix=".log")
     file_fmt = make_formatter()
     fh = make_file_handler(file_fmt, fname)
 
