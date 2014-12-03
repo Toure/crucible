@@ -33,8 +33,8 @@ successes = []
 for fn in LIVE_Migrate:
     print "Running {0}".format(fn.__name__)
     ret = fn()
-    successes.append(fn.__name__)
     if ret:
+        successes.append(fn.__name__)
         continue
     else:
         raise Exception("Time to call it quits as {} didn't"
